@@ -1,0 +1,10 @@
+aws_region   = "us-east-1"
+aws_profile  = "hadar-pc" # use "" in GitHub Actions
+project_name = "fringe-monitor"
+notify_email = "hadarwaldman@gmail.com"
+
+default_start_date = "2026-08-12"
+default_end_date   = "2026-08-20"
+
+daily_schedule     = "cron(0 6 * * ? *)"
+watchlist_schedule = "rate(15 minutes)"

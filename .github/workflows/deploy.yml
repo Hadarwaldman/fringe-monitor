@@ -1,0 +1,121 @@
+name: Deploy fringe-monitor
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fringe-monitor-deploy
+  cancel-in-progress: false
+
+jobs:
+  # PRs: validate + terraform plan only. No AWS changes.
+  plan:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.15.8"
+          terraform_wrapper: false
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Package Lambda
+        run: bash scripts/package_lambda.sh
+
+      - name: Terraform init & plan
+        working-directory: terraform
+        env:
+          TF_VAR_aws_profile: ""
+          TF_VAR_notify_email: hadarwaldman@gmail.com
+        run: |
+          terraform init -input=false
+          terraform fmt -check -recursive || true
+          terraform validate
+          # Read-only against shared state; -lock=false avoids contention with a live deploy.
+          terraform plan -input=false -lock=false
+
+  # main: full deploy to AWS on merge/push or manual dispatch.
+  deploy:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.15.8"
+          terraform_wrapper: false
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Package Lambda
+        run: bash scripts/package_lambda.sh
+
+      - name: Terraform init & apply
+        working-directory: terraform
+        env:
+          TF_VAR_aws_profile: ""
+          TF_VAR_notify_email: hadarwaldman@gmail.com
+        run: |
+          terraform init -input=false
+          terraform apply -input=false -auto-approve
+
+      - name: Publish frontend
+        working-directory: terraform
+        run: |
+          API_URL="$(terraform output -raw api_url)"
+          FRONTEND_BUCKET="$(terraform output -raw frontend_bucket)"
+          cat > ../frontend/config.js <<EOF
+          window.FRINGE_CONFIG = {
+            apiUrl: "${API_URL}",
+          };
+          EOF
+          aws s3 sync ../frontend/ "s3://${FRONTEND_BUCKET}/" --delete --cache-control "max-age=60" --exclude ".DS_Store"
+          DIST_ID="$(aws cloudfront list-distributions --query "DistributionList.Items[?Comment=='fringe-monitor'].Id | [0]" --output text)"
+          if [[ -n "${DIST_ID}" && "${DIST_ID}" != "None" ]]; then
+            aws cloudfront create-invalidation --distribution-id "$DIST_ID" --paths "/*" >/dev/null
+          fi
+          echo "Frontend: $(terraform output -raw cloudfront_url)"
+          echo "API: ${API_URL}"

@@ -1,0 +1,653 @@
+:root {
+  --ink: #1c1915;
+  --muted: #5c564c;
+  --paper: #f3efe6;
+  --panel: rgba(255, 252, 246, 0.88);
+  --line: rgba(28, 25, 21, 0.12);
+  --accent: #0f6a5a;
+  --accent-soft: #d7efe9;
+  --warn: #8a4b12;
+  --danger: #8b2430;
+  --danger-soft: #f5d7db;
+  --ok: #1f6b3a;
+  --shadow: 0 18px 50px rgba(28, 25, 21, 0.08);
+  --font-display: "Fraunces", Georgia, serif;
+  --font-body: "DM Sans", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  color: var(--ink);
+  font-family: var(--font-body);
+  background:
+    radial-gradient(1200px 600px at 10% -10%, #dfece7 0%, transparent 55%),
+    radial-gradient(900px 500px at 100% 0%, #efe2c8 0%, transparent 50%),
+    linear-gradient(180deg, #f7f3ea 0%, var(--paper) 40%, #ebe4d6 100%);
+  min-height: 100vh;
+}
+
+.page {
+  width: min(1120px, calc(100% - 2rem));
+  margin: 0 auto;
+  padding: 2.5rem 0 4rem;
+}
+
+.hero {
+  margin-bottom: 2rem;
+}
+
+.hero-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.85rem 1.25rem;
+  margin-bottom: 0.75rem;
+}
+
+.brand {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(2.4rem, 6vw, 4rem);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 0.95;
+}
+
+.user-switcher {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  background: rgba(255, 252, 246, 0.85);
+  align-self: center;
+}
+
+.user-btn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  padding: 0.45rem 0.9rem;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.92rem;
+}
+
+.user-btn + .user-btn {
+  border-left: 1px solid var(--line);
+}
+
+.user-btn:hover {
+  filter: none;
+  color: var(--ink);
+  background: rgba(15, 106, 90, 0.06);
+}
+
+.user-btn[aria-pressed="true"] {
+  background: var(--accent);
+  color: #f7fffc;
+}
+
+.user-btn[aria-pressed="true"]:hover {
+  filter: brightness(1.05);
+  color: #f7fffc;
+}
+
+.hero h1 {
+  margin: 0 0 0.75rem;
+  max-width: 18ch;
+  font-size: clamp(1.35rem, 2.6vw, 1.9rem);
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.lede {
+  margin: 0 0 1rem;
+  max-width: 52ch;
+  color: var(--muted);
+  font-size: 1.05rem;
+  line-height: 1.5;
+}
+
+.meta {
+  display: inline-flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding: 0.55rem 0.8rem;
+  border: 1px solid var(--line);
+  background: rgba(255, 252, 246, 0.7);
+  font-size: 0.92rem;
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  padding: 1.25rem 1.35rem 1.4rem;
+  margin-bottom: 1.25rem;
+  backdrop-filter: blur(8px);
+}
+
+.panel-head h2 {
+  margin: 0 0 0.25rem;
+  font-family: var(--font-display);
+  font-size: 1.45rem;
+}
+
+.panel-head p {
+  margin: 0 0 1rem;
+  color: var(--muted);
+}
+
+.panel-head-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+  margin-bottom: 1rem;
+}
+
+.panel-head-row .panel-head,
+.panel-head-row > div {
+  min-width: 0;
+  flex: 1 1 16rem;
+}
+
+.panel-head-row > button {
+  flex: 0 0 auto;
+  align-self: center;
+}
+
+.panel-head-row p {
+  margin-bottom: 0;
+}
+
+.config-form,
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.85rem 1rem;
+  align-items: end;
+}
+
+label {
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+input,
+select,
+button {
+  font: inherit;
+}
+
+input,
+select {
+  min-width: 10rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--line);
+  background: #fffdf8;
+  color: var(--ink);
+}
+
+button,
+.file-label {
+  appearance: none;
+  border: none;
+  background: var(--accent);
+  color: #f7fffc;
+  padding: 0.65rem 1rem;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+button:hover,
+.file-label:hover {
+  filter: brightness(1.05);
+}
+
+button:disabled,
+button:disabled:hover {
+  opacity: 0.45;
+  filter: none;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--line);
+}
+
+.btn-secondary:hover {
+  filter: none;
+  background: rgba(15, 106, 90, 0.08);
+}
+
+.confirm-dialog {
+  border: 1px solid var(--line);
+  background: #fffdf8;
+  color: var(--ink);
+  padding: 0;
+  max-width: min(28rem, calc(100vw - 2rem));
+  box-shadow: var(--shadow);
+}
+
+.confirm-dialog::backdrop {
+  background: rgba(28, 25, 21, 0.45);
+}
+
+.confirm-dialog-form {
+  display: grid;
+  gap: 0.85rem;
+  padding: 1.25rem 1.35rem 1.35rem;
+}
+
+.confirm-dialog h3 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+}
+
+.confirm-dialog p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.confirm-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  color: var(--ink);
+  font-size: 0.95rem;
+}
+
+.confirm-check input {
+  min-width: 0;
+  width: auto;
+  margin-top: 0.2rem;
+}
+
+.confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  justify-content: flex-end;
+  margin-top: 0.25rem;
+}
+
+.booking-dialog {
+  max-width: min(26rem, calc(100vw - 2rem));
+}
+
+.booking-dialog .confirm-dialog-form {
+  gap: 0.75rem;
+}
+
+.booking-dialog label {
+  width: 100%;
+}
+
+.booking-dialog input[type="text"],
+.booking-dialog input[type="date"],
+.booking-dialog input[type="number"] {
+  width: 100%;
+  min-width: 0;
+}
+
+.optional {
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.deal-fieldset {
+  margin: 0;
+  padding: 0.65rem 0.75rem 0.75rem;
+  border: 1px solid var(--line);
+  background: rgba(255, 253, 248, 0.6);
+}
+
+.deal-fieldset legend {
+  padding: 0 0.25rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.deal-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem 0.75rem;
+}
+
+.deal-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0;
+  color: var(--ink);
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.deal-check input {
+  min-width: 0;
+  width: auto;
+  margin: 0;
+}
+
+.field-hint {
+  margin: 0.55rem 0 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.btn-link {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--accent);
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 0.12em;
+}
+
+.btn-link:hover {
+  filter: brightness(0.9);
+}
+
+.btn-link.danger {
+  color: var(--danger);
+}
+
+.btn-row {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.55rem 0.75rem;
+  align-items: center;
+}
+
+.pill.booked {
+  background: #e4ebe8;
+  color: var(--accent);
+}
+
+.booked-price {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.booked-empty {
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.file-label {
+  display: inline-block;
+  width: fit-content;
+}
+
+.file-label input {
+  display: none;
+}
+
+.status {
+  min-height: 1.25rem;
+  color: var(--muted);
+  font-size: 0.92rem;
+  align-self: center;
+}
+
+.table-wrap {
+  overflow-x: auto;
+  margin-top: 0.85rem;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 0.65rem 0.55rem;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+
+th {
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+a {
+  color: var(--accent);
+}
+
+.pill {
+  display: inline-block;
+  padding: 0.15rem 0.45rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.pill.sold_out {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.pill.nearly_sold_out {
+  background: #f3e2c8;
+  color: var(--warn);
+}
+
+.pill.available {
+  background: var(--accent-soft);
+  color: var(--ok);
+}
+
+.pill.unknown {
+  background: #ece7dc;
+  color: var(--muted);
+}
+
+.dates {
+  max-width: 18rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.remaining {
+  max-width: 22rem;
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+
+.rem {
+  display: inline-block;
+  margin: 0 0.35rem 0.25rem 0;
+  padding: 0.1rem 0.4rem;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.rem.sold_out {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.rem.nearly_sold_out {
+  background: #f3e2c8;
+  color: var(--warn);
+}
+
+.rem.available {
+  background: var(--accent-soft);
+  color: var(--ok);
+}
+
+.rem.unknown {
+  background: #ece7dc;
+  color: var(--muted);
+}
+
+.rem .rem-count {
+  margin-left: 0.2rem;
+  font-size: 0.78em;
+  font-weight: 700;
+  opacity: 0.75;
+}
+
+.deals {
+  max-width: 18rem;
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+
+.deal {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.2rem;
+  margin: 0 0.35rem 0.25rem 0;
+  padding: 0.1rem 0.35rem;
+  background: rgba(15, 106, 90, 0.08);
+  border: 1px solid rgba(15, 106, 90, 0.18);
+  white-space: nowrap;
+}
+
+.deal-date {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.deal-tag {
+  font-size: 0.78em;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--accent);
+}
+
+.rem-group {
+  display: inline-block;
+  vertical-align: top;
+  margin: 0 0.35rem 0.25rem 0;
+}
+
+.rem-group > summary {
+  display: inline-block;
+  margin: 0;
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+}
+
+.rem-group > summary::-webkit-details-marker {
+  display: none;
+}
+
+.rem-group > summary::after {
+  content: "▾";
+  margin-left: 0.25rem;
+  font-size: 0.7em;
+  opacity: 0.65;
+}
+
+.rem-group[open] > summary::after {
+  content: "▴";
+}
+
+.rem-perfs {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+  margin: 0.25rem 0 0.35rem;
+  padding-left: 0.15rem;
+}
+
+.rem-perfs .rem {
+  margin: 0;
+}
+
+.th-hint {
+  font-weight: 500;
+  color: var(--muted);
+  font-size: 0.85em;
+}
+
+.trend-cell {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.trend {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.trend.muted {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.trend.up {
+  color: var(--danger);
+}
+
+.trend.down {
+  color: var(--ok);
+}
+
+.trend.flat {
+  color: var(--muted);
+}
+
+.trend-spark {
+  display: block;
+  flex: 0 0 auto;
+}
+
+.trend-val {
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .page {
+    width: min(100% - 1.25rem, 1120px);
+    padding-top: 1.5rem;
+  }
+
+  input,
+  select {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .config-form label,
+  .filters label {
+    width: 100%;
+  }
+}
