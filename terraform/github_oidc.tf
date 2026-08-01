@@ -32,10 +32,17 @@ data "aws_iam_policy_document" "github_actions_assume" {
     # Any workflow context in THIS repo (main push, PRs, dispatch). The repo
     # prefix is the security boundary: a fork's token carries its own repo in
     # `sub`, so it cannot match. Fork PRs are also not issued an OIDC token.
+    #
+    # GitHub's current default `sub` embeds the immutable numeric org/repo IDs
+    # (rename/recreate-safe): repo:<owner>@<orgId>/<repo>@<repoId>:<context>.
+    # We match that, plus the legacy name-only form for resilience.
     condition {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.github_repo}:*"]
+      values = [
+        "repo:Hadarwaldman@203459939/fringe-monitor@1313197034:*",
+        "repo:${var.github_repo}:*",
+      ]
     }
   }
 }
