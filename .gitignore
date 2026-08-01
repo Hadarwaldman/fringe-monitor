@@ -4,3 +4,9 @@ __pycache__/
 *.pyc
 .DS_Store
 output/
+build/
+*.zip
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.*
+terraform/terraform.tfvars
