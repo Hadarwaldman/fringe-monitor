@@ -29,15 +29,13 @@ data "aws_iam_policy_document" "github_actions_assume" {
       values   = ["sts.amazonaws.com"]
     }
 
-    # Only this repo's main branch (deploy) and same-repo PRs (plan).
-    # Fork PRs are not issued an OIDC token by GitHub, so they cannot assume this role.
+    # Any workflow context in THIS repo (main push, PRs, dispatch). The repo
+    # prefix is the security boundary: a fork's token carries its own repo in
+    # `sub`, so it cannot match. Fork PRs are also not issued an OIDC token.
     condition {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
-      values = [
-        "repo:${var.github_repo}:ref:refs/heads/main",
-        "repo:${var.github_repo}:pull_request",
-      ]
+      values   = ["repo:${var.github_repo}:*"]
     }
   }
 }
