@@ -63,7 +63,9 @@ This: (1) builds `build/lambda.zip` via `package_lambda.sh`, (2) `terraform appl
 - **`plan`** (on `pull_request` → `main`): builds the Lambda zip, runs `terraform validate` + `terraform plan -lock=false`. Read-only — no AWS changes. This is the PR check.
 - **`deploy`** (on push to `main` / merge, or manual `workflow_dispatch`): the full deploy (apply + frontend sync + invalidation).
 
-So: **open a PR → plan runs; merge to `main` → auto-deploy.** Requires repo secrets `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`. `notify_email` is passed via `TF_VAR_notify_email`. CI and local share the same remote state. Note: `main` has no branch protection, so a direct push to `main` also deploys (bypassing the PR plan).
+So: **open a PR → plan runs; merge to `main` → auto-deploy.**
+
+Auth is **GitHub OIDC — no static keys/secrets stored.** The workflow assumes IAM role `fringe-monitor-github-actions` (defined in `terraform/github_oidc.tf`), whose trust policy only allows this repo's `main` branch and same-repo PRs. The role has a service-scoped policy (S3/Lambda/CloudFront/API Gateway/DynamoDB/SES/EventBridge/Logs/IAM). `notify_email` is passed via `TF_VAR_notify_email`. CI and local share the same remote state. Note: `main` has no branch protection, so a direct push to `main` also deploys (bypassing the PR plan).
 
 ### Terraform state (important)
 Remote S3 backend: bucket `fringe-monitor-tfstate-152930225704`, key `fringe-monitor/terraform.tfstate`, native S3 locking. Local and CI **share this state** — never init a second empty state or you'll duplicate the stack. `terraform/terraform.tfvars` is gitignored (copy from `terraform.tfvars.example`).

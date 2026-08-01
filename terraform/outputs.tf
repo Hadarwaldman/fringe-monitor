@@ -35,3 +35,8 @@ output "notify_email" {
 output "ses_identity_arn" {
   value = aws_sesv2_email_identity.notify.arn
 }
+
+output "github_actions_role_arn" {
+  description = "IAM role assumed by the GitHub Actions workflow via OIDC"
+  value       = aws_iam_role.github_actions.arn
+}
