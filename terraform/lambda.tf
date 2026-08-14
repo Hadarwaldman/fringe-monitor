@@ -46,10 +46,9 @@ resource "aws_lambda_function" "watchlist" {
   timeout     = 900
   memory_size = 1024
 
-  # Serialize runs: the scheduled 15-min check and any manual /monitors/check
-  # must not run concurrently, or they race on MONITOR item state (clobbering
-  # hold results and alert flags). Concurrency 1 → extra invocations queue.
-  reserved_concurrent_executions = 1
+  # NOTE: runs are serialized via a DynamoDB lock in the handler (see
+  # aws_util.acquire_watchlist_lock), not reserved concurrency — this account's
+  # total concurrency limit (10) has no headroom to reserve a slot.
 
   environment {
     variables = local.lambda_env

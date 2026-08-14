@@ -183,6 +183,40 @@ def replace_watchlist_source(
     return upsert_watch_items(fresh, table)
 
 
+def acquire_watchlist_lock(*, ttl_seconds: int = 840, table=None) -> bool:
+    """Best-effort mutex so watchlist/monitor runs don't overlap and race on
+    MONITOR state. Conditional-put a LOCK item that only succeeds if none
+    exists or the existing one has expired. Returns True if acquired.
+
+    ttl_seconds should exceed a normal run (~2 min) but be below the 15-min
+    cadence so a crashed run self-heals by the next schedule.
+    """
+    import time
+
+    table = table or dynamodb_table()
+    now = int(time.time())
+    expires = now + ttl_seconds
+    try:
+        table.put_item(
+            Item={"pk": "LOCK", "sk": "WATCHLIST", "expires_at": expires},
+            ConditionExpression="attribute_not_exists(pk) OR expires_at < :now",
+            ExpressionAttributeValues={":now": now},
+        )
+        return True
+    except Exception as exc:  # noqa: BLE001
+        if "ConditionalCheckFailed" in type(exc).__name__ or "ConditionalCheckFailed" in str(exc):
+            return False
+        raise
+
+
+def release_watchlist_lock(table=None) -> None:
+    table = table or dynamodb_table()
+    try:
+        table.delete_item(Key={"pk": "LOCK", "sk": "WATCHLIST"})
+    except Exception as exc:  # noqa: BLE001
+        print(f"warn: could not release watchlist lock: {exc}", flush=True)
+
+
 def list_monitors(table=None) -> list[dict[str, Any]]:
     table = table or dynamodb_table()
     items: list[dict[str, Any]] = []

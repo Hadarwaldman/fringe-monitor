@@ -6,12 +6,14 @@ from datetime import date
 from typing import Any
 
 from fringe_lib.aws_util import (
+    acquire_watchlist_lock,
     env,
     get_alert_state,
     get_config,
     list_monitors,
     list_watchlist,
     put_alert_state,
+    release_watchlist_lock,
     send_reopen_email,
     upsert_watch_items,
 )
@@ -158,4 +160,12 @@ async def run_watchlist_check() -> dict[str, Any]:
 
 
 def handler(event: dict[str, Any] | None, context: Any) -> dict[str, Any]:
-    return asyncio.run(run_watchlist_check())
+    # Serialize runs via a DynamoDB lock — the 15-min schedule and manual
+    # /monitors/check must not overlap, or they race on MONITOR state.
+    if not acquire_watchlist_lock():
+        print("Another watchlist run holds the lock; skipping this invocation.", flush=True)
+        return {"ok": True, "skipped": "locked"}
+    try:
+        return asyncio.run(run_watchlist_check())
+    finally:
+        release_watchlist_lock()
