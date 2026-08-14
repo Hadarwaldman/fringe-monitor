@@ -34,11 +34,13 @@ import re
 from datetime import datetime
 from html.parser import HTMLParser
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import httpx
 
 BASE_URL = "https://www.planmyfringe.co.uk"
 DEFAULT_YEAR = 2026
+EDINBURGH_TZ = "Europe/London"
 
 BROWSER_HEADERS = {
     "User-Agent": (
@@ -50,8 +52,10 @@ BROWSER_HEADERS = {
 }
 
 # One page carries both: the day-by-day schedule table AND the full rated
-# show list ("wishlist") table below it.
-SCHEDULE_PATHS = ["/CalendarList"]
+# show list ("wishlist") table below it. includepast=Y makes the site keep
+# performances that already started/ended (it hides them by default); we
+# flag those entries as past and never import them to the watchlist.
+SCHEDULE_PATHS = ["/CalendarList?includepast=Y", "/CalendarList"]
 
 _MONTHS = {
     "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
@@ -505,6 +509,18 @@ def normalize_title(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", str(value or "").lower()).strip()
 
 
+def _is_past(entry: dict[str, Any], now: datetime) -> bool:
+    """True when the performance has already started (Edinburgh time)."""
+    date = entry.get("date") or ""
+    if not date:
+        return False
+    today = now.strftime("%Y-%m-%d")
+    if date != today:
+        return date < today
+    time = entry.get("time") or ""
+    return bool(time) and time <= now.strftime("%H:%M")
+
+
 def _match_show(title: str, shows: list[dict[str, Any]]) -> dict[str, Any] | None:
     key = normalize_title(title)
     if not key:
@@ -550,6 +566,7 @@ def sync_planner(
 
     scraped = fetch_planner_data(credentials, year=year)
     shows = latest.get("shows") or []
+    now_edinburgh = datetime.now(ZoneInfo(EDINBURGH_TZ))
 
     schedule_out: list[dict[str, Any]] = []
     watch_items: list[dict[str, Any]] = []
@@ -558,6 +575,7 @@ def sync_planner(
         perf = _perf_for(show, entry["date"], entry["time"]) if show else None
         item = {
             **entry,
+            "past": _is_past(entry, now_edinburgh),
             "matched_show_title": show.get("show_title") if show else None,
             "slug": show.get("slug") if show else None,
             "url": show.get("url") if show else None,
@@ -565,7 +583,7 @@ def sync_planner(
             "availability": perf.get("availability") if perf else None,
         }
         schedule_out.append(item)
-        if entry["confirmed"] or perf is None:
+        if item["past"] or entry["confirmed"] or perf is None:
             continue
         watch_items.append(
             {
@@ -598,6 +616,7 @@ def sync_planner(
     confirmed = sum(1 for e in schedule_out if e["confirmed"])
     summary = {
         "schedule_entries": len(schedule_out),
+        "past_entries": sum(1 for e in schedule_out if e["past"]),
         "confirmed_booked": confirmed,
         "watchlist_imported": len(watch_items),
         "unmatched_schedule": sum(
