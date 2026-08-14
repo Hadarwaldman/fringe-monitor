@@ -46,6 +46,11 @@ resource "aws_lambda_function" "watchlist" {
   timeout     = 900
   memory_size = 1024
 
+  # Serialize runs: the scheduled 15-min check and any manual /monitors/check
+  # must not run concurrently, or they race on MONITOR item state (clobbering
+  # hold results and alert flags). Concurrency 1 → extra invocations queue.
+  reserved_concurrent_executions = 1
+
   environment {
     variables = local.lambda_env
   }
