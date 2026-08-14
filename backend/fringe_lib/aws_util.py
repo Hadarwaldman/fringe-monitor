@@ -159,6 +159,133 @@ def replace_auto_watchlist(items: list[dict[str, Any]], table=None) -> int:
     return upsert_watch_items(auto_only + manual, table)
 
 
+def list_monitors(table=None) -> list[dict[str, Any]]:
+    table = table or dynamodb_table()
+    items: list[dict[str, Any]] = []
+    kwargs: dict[str, Any] = {
+        "KeyConditionExpression": Key("pk").eq("MONITOR"),
+    }
+    while True:
+        resp = table.query(**kwargs)
+        items.extend(resp.get("Items") or [])
+        if "LastEvaluatedKey" not in resp:
+            break
+        kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
+    return json.loads(json.dumps(items, default=_json_default))
+
+
+def get_monitor(monitor_id: str, table=None) -> dict[str, Any] | None:
+    table = table or dynamodb_table()
+    resp = table.get_item(Key={"pk": "MONITOR", "sk": str(monitor_id)})
+    item = resp.get("Item")
+    if not item:
+        return None
+    return json.loads(json.dumps(item, default=_json_default))
+
+
+def put_monitor(monitor: dict[str, Any], table=None) -> None:
+    table = table or dynamodb_table()
+    table.put_item(
+        Item={
+            "pk": "MONITOR",
+            "sk": str(monitor["monitor_id"]),
+            **monitor,
+        }
+    )
+
+
+def patch_monitor(monitor_id: str, fields: dict[str, Any], table=None) -> None:
+    if not fields:
+        return
+    table = table or dynamodb_table()
+    names = {f"#f{i}": key for i, key in enumerate(fields)}
+    values = {f":v{i}": value for i, value in enumerate(fields.values())}
+    expr = ", ".join(f"#f{i} = :v{i}" for i in range(len(fields)))
+    table.update_item(
+        Key={"pk": "MONITOR", "sk": str(monitor_id)},
+        UpdateExpression=f"SET {expr}",
+        ExpressionAttributeNames=names,
+        ExpressionAttributeValues=values,
+    )
+
+
+def delete_monitor(monitor_id: str, table=None) -> None:
+    table = table or dynamodb_table()
+    table.delete_item(Key={"pk": "MONITOR", "sk": str(monitor_id)})
+
+
+def send_monitor_email(
+    *,
+    to_address: str,
+    from_address: str,
+    monitor: dict[str, Any],
+    openings: list[dict[str, Any]],
+    statuses: list[dict[str, Any]],
+    hold: dict[str, Any] | None,
+) -> None:
+    show = monitor.get("show_title") or monitor.get("slug") or "show"
+    lines = [
+        f"Fringe Monitor: tickets are available for {show}!",
+        f"Monitored range: {monitor.get('start_date')} → {monitor.get('end_date')}",
+        "",
+        "Newly available:",
+    ]
+    for item in openings:
+        rem = item.get("percent_remaining")
+        rem_txt = f", ~{rem}% remaining" if rem is not None else ""
+        lines.append(
+            f"- {item.get('date')} {item.get('time')} ({item.get('availability')}{rem_txt})"
+        )
+
+    if hold is not None:
+        lines.append("")
+        if hold.get("success"):
+            lines.extend(
+                [
+                    f"✅ {hold.get('quantity')} ticket(s) for {hold.get('date')} "
+                    f"{hold.get('time')} are HELD in your edfringe basket "
+                    f"({hold.get('price_band') or 'full price'}, £{hold.get('unit_price')}).",
+                    f"Basket total: £{hold.get('basket_total')} — expires in "
+                    f"{hold.get('expires_in') or '~30 minutes'}.",
+                    "Log in at https://www.edfringe.com and open your basket to "
+                    "complete the purchase before it expires.",
+                ]
+            )
+        else:
+            lines.append(
+                f"⚠️ Could not hold tickets automatically: {hold.get('error')}. "
+                "Book manually via the link below."
+            )
+
+    if monitor.get("url"):
+        lines.extend(["", f"Book here: {monitor['url']}"])
+
+    if statuses:
+        lines.extend(["", "All monitored performances right now:"])
+        for s in statuses:
+            rem = s.get("percent_remaining")
+            rem_txt = f" (~{rem}% left)" if rem is not None else ""
+            lines.append(
+                f"- {s.get('date')} {s.get('time')}: {s.get('availability')}{rem_txt}"
+            )
+
+    lines.extend(["", "— fringe-monitor"])
+    held = hold.get("success") if hold else False
+    subject = (
+        f"[fringe-monitor] {'Tickets HELD' if held else 'Tickets available'}: {show}"
+    )
+    ses_client().send_email(
+        FromEmailAddress=from_address,
+        Destination={"ToAddresses": [to_address]},
+        Content={
+            "Simple": {
+                "Subject": {"Data": subject, "Charset": "UTF-8"},
+                "Body": {"Text": {"Data": "\n".join(lines), "Charset": "UTF-8"}},
+            }
+        },
+    )
+
+
 def get_alert_state(performance_id: int | str, table=None) -> dict[str, Any] | None:
     table = table or dynamodb_table()
     resp = table.get_item(Key={"pk": "ALERT", "sk": str(performance_id)})

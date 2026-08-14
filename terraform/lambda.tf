@@ -6,6 +6,7 @@ locals {
     FROM_EMAIL          = var.notify_email
     DEFAULT_START_DATE  = var.default_start_date
     DEFAULT_END_DATE    = var.default_end_date
+    EDFRINGE_CREDS_PARAM = var.edfringe_creds_param
   }
 
   lambda_hash = fileexists(local.lambda_zip_path) ? filebase64sha256(local.lambda_zip_path) : null
@@ -67,6 +68,7 @@ resource "aws_lambda_function" "api" {
   environment {
     variables = merge(local.lambda_env, {
       FULL_SCAN_FUNCTION_NAME = aws_lambda_function.full_scan.function_name
+      WATCHLIST_FUNCTION_NAME = aws_lambda_function.watchlist.function_name
     })
   }
 

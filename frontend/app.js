@@ -346,7 +346,7 @@
     const lede = $("compare-lede");
     if (lede) {
       lede.textContent =
-        `Upload ${user.name}'s PlanMyFringe export. Schedules are stored separately per person on this device. Matching is by show name (case-insensitive). Status that day is only for the scheduled date — other open dates are listed separately.`;
+        `Upload ${user.name}'s PlanMyFringe export (CSV or PDF). Schedules are stored separately per person on this device. Matching is by show name (case-insensitive). Status that day is only for the scheduled date — other open dates are listed separately.`;
     }
     const bookedHeading = $("booked-heading");
     if (bookedHeading) bookedHeading.textContent = `${user.name}'s booked tickets`;
@@ -1023,6 +1023,143 @@
     return escapeHtml(value).replaceAll("'", "&#39;");
   }
 
+  // --- PlanMyFringe PDF schedule parsing (pdf.js loaded on demand) ---
+
+  const PDFJS_VERSION = "3.11.174";
+  const PDFJS_SRC = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDFJS_VERSION}/pdf.min.js`;
+  const PDFJS_WORKER_SRC = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDFJS_VERSION}/pdf.worker.min.js`;
+  let pdfjsLoadPromise = null;
+
+  function loadPdfJs() {
+    if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+    if (!pdfjsLoadPromise) {
+      pdfjsLoadPromise = new Promise((resolve, reject) => {
+        const script = document.createElement("script");
+        script.src = PDFJS_SRC;
+        script.onload = () => {
+          window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER_SRC;
+          resolve(window.pdfjsLib);
+        };
+        script.onerror = () => {
+          pdfjsLoadPromise = null;
+          reject(new Error("could not load the PDF reader (offline?)"));
+        };
+        document.head.appendChild(script);
+      });
+    }
+    return pdfjsLoadPromise;
+  }
+
+  async function extractPdfLines(file) {
+    const pdfjs = await loadPdfJs();
+    const data = new Uint8Array(await file.arrayBuffer());
+    const doc = await pdfjs.getDocument({ data }).promise;
+    const lines = [];
+    for (let p = 1; p <= doc.numPages; p += 1) {
+      const page = await doc.getPage(p);
+      const content = await page.getTextContent();
+      // Group text items into visual lines by y position, then order by x.
+      const rows = new Map();
+      for (const item of content.items) {
+        const str = (item.str || "").trim();
+        if (!str) continue;
+        const y = item.transform[5];
+        let key = null;
+        for (const k of rows.keys()) {
+          if (Math.abs(k - y) <= 2) {
+            key = k;
+            break;
+          }
+        }
+        if (key == null) {
+          key = y;
+          rows.set(key, []);
+        }
+        rows.get(key).push({ x: item.transform[4], w: item.width || 0, str });
+      }
+      const sorted = [...rows.entries()].sort((a, b) => b[0] - a[0]);
+      for (const [, items] of sorted) {
+        items.sort((a, b) => a.x - b.x);
+        let line = "";
+        let prevEnd = null;
+        for (const i of items) {
+          if (prevEnd != null) line += i.x - prevEnd > 1 ? " " : "";
+          line += i.str;
+          prevEnd = i.x + i.w;
+        }
+        lines.push(line.replace(/\s+/g, " ").trim());
+      }
+    }
+    return lines;
+  }
+
+  const PDF_MONTHS = {
+    jan: "01", feb: "02", mar: "03", apr: "04", may: "05", jun: "06",
+    jul: "07", aug: "08", sep: "09", oct: "10", nov: "11", dec: "12",
+  };
+
+  /**
+   * Parse a PlanMyFringe PDF export into the same row shape the CSV path
+   * produces ({Date, Name, Venue, ...}). Layout per show:
+   *   day header  → "Thu 13 Aug"
+   *   show line   → "<name> <rating> [<walk> mins] <price> <start> <end> <duration>"
+   *   name wrap   → optional extra line(s) when the title is long
+   *   venue line  → "…, EH8 9TJ" (always ends with a postcode)
+   */
+  function parsePdfSchedule(lines) {
+    const dayRe = /^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+(\d{1,2})\s+([A-Z][a-z]{2})$/;
+    const showRe = /^(.*?)\s+(\d{1,2})\s+(?:(\d+)\s+mins?\s+)?(\d+\.\d{2})\s+(\d{1,2}:\d{2})\s+(\d{1,2}:\d{2})\s+(\d{1,2}:\d{2})$/;
+    const venueRe = /[A-Z]{1,2}\d{1,2}\s*\d[A-Z]{2}$/;
+    const skipRe = /^(Schedule for\b|Name Rating\b|Created by\b|Total Shows:)/i;
+
+    const rows = [];
+    let currentDay = null;
+    let pending = null;
+
+    const commit = () => {
+      if (pending) rows.push(pending);
+      pending = null;
+    };
+
+    for (const line of lines) {
+      if (!line || skipRe.test(line)) continue;
+
+      const dayM = line.match(dayRe);
+      if (dayM) {
+        commit();
+        const month = PDF_MONTHS[dayM[3].toLowerCase()];
+        currentDay = month ? `${dayM[1]} ${dayM[2].padStart(2, "0")}/${month}` : null;
+        continue;
+      }
+
+      if (venueRe.test(line)) {
+        if (pending) pending.Venue = line;
+        commit();
+        continue;
+      }
+
+      const m = line.match(showRe);
+      if (m && currentDay) {
+        commit();
+        pending = {
+          Date: currentDay,
+          Name: m[1].trim(),
+          Venue: "",
+          Time: m[5],
+          "End Time": m[6],
+          "Price (£)": m[4],
+        };
+        continue;
+      }
+
+      // Long titles wrap: the numbers sit on the first visual line, the
+      // rest of the name follows before the venue line.
+      if (pending) pending.Name = `${pending.Name} ${line}`.trim();
+    }
+    commit();
+    return rows;
+  }
+
   function parseCsv(text) {
     const rows = [];
     let row = [];
@@ -1219,11 +1356,27 @@
     const input = event.target;
     const file = input.files && input.files[0];
     if (!file) return;
-    const text = await file.text();
-    state.scheduleRows = parseCsv(text);
-    state.scheduleFileName = file.name || "";
-    saveSchedule();
-    renderCompare();
+    const isPdf =
+      /\.pdf$/i.test(file.name || "") || file.type === "application/pdf";
+    try {
+      setScheduleStatus(isPdf ? "Reading PDF…" : "Reading CSV…");
+      const rows = isPdf
+        ? parsePdfSchedule(await extractPdfLines(file))
+        : parseCsv(await file.text());
+      if (!rows.length) {
+        setScheduleStatus(
+          `No schedule rows found in ${file.name} — is it a PlanMyFringe export?`,
+        );
+        input.value = "";
+        return;
+      }
+      state.scheduleRows = rows;
+      state.scheduleFileName = file.name || "";
+      saveSchedule();
+      renderCompare();
+    } catch (err) {
+      setScheduleStatus(`Could not read ${file.name}: ${err.message || err}`);
+    }
     input.value = "";
   });
 

@@ -32,6 +32,18 @@ variable "default_end_date" {
   default = "2026-08-20"
 }
 
+variable "edfringe_creds_param" {
+  description = <<-EOT
+    SSM SecureString parameter holding edfringe account credentials as JSON
+    ({"email": "...", "password": "..."}). Created manually (never in TF state):
+    aws ssm put-parameter --name /fringe-monitor/edfringe-credentials \
+      --type SecureString --value '{"email":"...","password":"..."}'
+    Ticket holds are skipped gracefully while it does not exist.
+  EOT
+  type        = string
+  default     = "/fringe-monitor/edfringe-credentials"
+}
+
 variable "daily_schedule" {
   description = "EventBridge schedule for full scan (UTC)"
   type        = string

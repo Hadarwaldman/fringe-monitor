@@ -55,10 +55,30 @@ data "aws_iam_policy_document" "lambda_app" {
   statement {
     sid     = "InvokeFullScan"
     actions = ["lambda:InvokeFunction"]
-    # Constructed ARN avoids a cycle with aws_lambda_function.full_scan
+    # Constructed ARNs avoid a cycle with the lambda resources
     resources = [
       "arn:aws:lambda:${var.aws_region}:${local.account_id}:function:${local.name}-full-scan",
+      "arn:aws:lambda:${var.aws_region}:${local.account_id}:function:${local.name}-watchlist",
     ]
+  }
+
+  statement {
+    sid     = "EdfringeCreds"
+    actions = ["ssm:GetParameter"]
+    resources = [
+      "arn:aws:ssm:${var.aws_region}:${local.account_id}:parameter${var.edfringe_creds_param}",
+    ]
+  }
+
+  statement {
+    sid       = "EdfringeCredsDecrypt"
+    actions   = ["kms:Decrypt"]
+    resources = ["*"]
+    condition {
+      test     = "StringEquals"
+      variable = "kms:ViaService"
+      values   = ["ssm.${var.aws_region}.amazonaws.com"]
+    }
   }
 }
 

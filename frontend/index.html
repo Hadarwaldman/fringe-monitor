@@ -18,6 +18,7 @@
       <header class="hero">
         <div class="hero-top">
           <p class="brand">Fringe Monitor</p>
+          <a class="back-link" href="./monitors.html">Ticket monitors →</a>
           <div class="user-switcher" role="group" aria-label="Active user">
             <button type="button" class="user-btn" data-user="hadar" aria-pressed="true">Hadar</button>
             <button type="button" class="user-btn" data-user="adi" aria-pressed="false">Adi</button>
@@ -25,7 +26,7 @@
         </div>
         <h1>Sold-out days, reopen alerts, schedule compare</h1>
         <p class="lede">
-          Live Edinburgh Fringe availability for your date window. Switch user, then upload a PlanMyFringe CSV to see which of your picks are sold out.
+          Live Edinburgh Fringe availability for your date window. Switch user, then upload a PlanMyFringe CSV or PDF to see which of your picks are sold out.
         </p>
         <div class="meta" id="meta">Loading latest scan…</div>
       </header>
@@ -76,12 +77,12 @@
 
       <section class="panel" aria-labelledby="compare-heading">
         <div class="panel-head">
-          <h2 id="compare-heading">Compare schedule CSV</h2>
-          <p id="compare-lede">Upload a PlanMyFringe export. Each person keeps their own schedule on this device. Matching is by show name (case-insensitive). Status that day is only for your scheduled date — other open dates are listed separately.</p>
+          <h2 id="compare-heading">Compare schedule</h2>
+          <p id="compare-lede">Upload a PlanMyFringe export — CSV or PDF. Each person keeps their own schedule on this device. Matching is by show name (case-insensitive). Status that day is only for your scheduled date — other open dates are listed separately.</p>
         </div>
         <label class="file-label">
-          <input type="file" id="csv-input" accept=".csv,text/csv" />
-          Choose CSV
+          <input type="file" id="csv-input" accept=".csv,.pdf,text/csv,application/pdf" />
+          Choose CSV or PDF
         </label>
         <div id="csv-status" class="status"></div>
         <div id="compare-summary" class="status"></div>
