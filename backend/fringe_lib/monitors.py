@@ -18,6 +18,10 @@ from .models import PerformanceRow
 # "Buyable" = anything you can still get a ticket for.
 BUYABLE = {"available", "nearly_sold_out"}
 
+# How many times to retry a failed basket hold for the same performance
+# (e.g. transient 429s) before giving up, to avoid hammering the account.
+MAX_HOLD_ATTEMPTS = 4
+
 
 def now_iso() -> str:
     return datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -187,10 +191,18 @@ async def run_monitor_checks(
                 hold_result["performance_id"] = target.performance_id
                 hold_result["date"] = target.date_local
                 hold_result["time"] = target.time_local
+                prior = holds.get(str(target.performance_id)) or {}
+                attempts = int(prior.get("attempts") or 0) + 1
                 holds[str(target.performance_id)] = {
                     **hold_result,
                     "at": now_iso(),
+                    "attempts": attempts,
                 }
+                # If the hold FAILED (e.g. transient 429) while the performance
+                # is still buyable, re-arm it so the next check retries — up to
+                # MAX_HOLD_ATTEMPTS, then give up to avoid hammering the account.
+                if not hold_result.get("success") and attempts < MAX_HOLD_ATTEMPTS:
+                    outcome["alerted"][str(target.performance_id)] = "hold_failed"
 
         patch: dict[str, Any] = {
             "last_checked_at": now_iso(),
