@@ -429,7 +429,20 @@
       Venue: e.venue || "",
       Time: e.time || "",
       __confirmed: !!e.confirmed,
+      __past: !!e.past,
     }));
+  }
+
+  function isPastRow(row) {
+    if (row.__past != null) return !!row.__past;
+    const date = parsePlanDate(row.Date || row.date);
+    if (!date) return false;
+    const d = new Date();
+    const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    if (date !== today) return date < today;
+    const time = row.Time || row.time || "";
+    const hm = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+    return !!time && time <= hm;
   }
 
   function adoptPlannerSchedule() {
@@ -1412,7 +1425,10 @@
       const db = parsePlanDate(b.Date || b.date) || "";
       return da === db ? rowTime(a).localeCompare(rowTime(b)) : da.localeCompare(db);
     });
-    tbody.innerHTML = sortedRows
+    const showPast = !!($("show-past-toggle") && $("show-past-toggle").checked);
+    const pastCount = sortedRows.filter(isPastRow).length;
+    const visibleRows = showPast ? sortedRows : sortedRows.filter((r) => !isPastRow(r));
+    tbody.innerHTML = visibleRows
       .map((row) => {
         const date = parsePlanDate(row.Date || row.date);
         const show = findShow(row.Name || row.name || row.Show);
@@ -1427,7 +1443,7 @@
           !!row.__confirmed ||
           (show ? bookingsForShow(show).some((b) => b.date === date) : false);
         const bookedTip = row.__confirmed ? ` title="Confirmed on PlanMyFringe — tickets already booked"` : "";
-        return `<tr>
+        return `<tr${isPastRow(row) ? ' class="past-row"' : ""}>
           <td>${escapeHtml(row.Date || date || "")}</td>
           <td>${escapeHtml(rowTime(row) || "—")}</td>
           <td><strong>${escapeHtml(row.Name || "")}</strong>${bookedForDay ? ` <span class="pill booked"${bookedTip}>booked</span>` : ""}${scoreChip(row.Name)}<div class="dates">${escapeHtml(row.Venue || "")}</div></td>
@@ -1446,8 +1462,13 @@
       })
       .join("");
     table.hidden = false;
+    const pastNote = pastCount
+      ? showPast
+        ? ` · ${pastCount} past shown`
+        : ` · ${pastCount} past hidden`
+      : "";
     $("compare-summary").textContent =
-      `${state.scheduleRows.length} schedule rows · ${matched} matched · ${soldHits} sold out on scheduled day`;
+      `${visibleRows.length} schedule rows · ${matched} matched · ${soldHits} sold out on scheduled day${pastNote}`;
     const user = currentUser();
     setScheduleStatus(
       state.scheduleFileName
@@ -1492,6 +1513,8 @@
   }
 
   $("sync-planner-btn").addEventListener("click", syncPlanner);
+
+  $("show-past-toggle").addEventListener("change", renderCompare);
 
   $("run-scan-btn").addEventListener("click", () => {
     resetScanConfirm();
