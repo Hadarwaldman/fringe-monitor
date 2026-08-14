@@ -67,6 +67,7 @@ data "aws_iam_policy_document" "lambda_app" {
     actions = ["ssm:GetParameter"]
     resources = [
       "arn:aws:ssm:${var.aws_region}:${local.account_id}:parameter${var.edfringe_creds_param}",
+      "arn:aws:ssm:${var.aws_region}:${local.account_id}:parameter${var.fringe_proxy_param}",
     ]
   }
 

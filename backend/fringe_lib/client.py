@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from typing import Any
 
 import httpx
@@ -70,6 +71,24 @@ query PerformancePrices($performanceId: String!) {
   }
 }
 """
+
+
+def make_async_client(
+    *,
+    timeout: float = 60.0,
+    max_connections: int = 30,
+    max_keepalive_connections: int = 20,
+) -> httpx.AsyncClient:
+    """Build the shared httpx client. When FRINGE_PROXY_URL is set, all traffic
+    is routed through it — required in AWS, where the edfringe API's Cloudflare
+    front 403s datacenter IPs. Unset locally (residential IP) → direct.
+    """
+    limits = httpx.Limits(
+        max_connections=max_connections,
+        max_keepalive_connections=max_keepalive_connections,
+    )
+    proxy = os.environ.get("FRINGE_PROXY_URL") or None
+    return httpx.AsyncClient(timeout=timeout, limits=limits, proxy=proxy)
 
 
 class FringeClient:

@@ -7,8 +7,6 @@ import json
 from datetime import date
 from typing import Any
 
-import httpx
-
 from fringe_lib.aws_util import (
     env,
     get_config,
@@ -16,7 +14,8 @@ from fringe_lib.aws_util import (
     put_json_s3,
     replace_auto_watchlist,
 )
-from fringe_lib.client import FringeClient
+from fringe_lib.cart import load_proxy_into_env
+from fringe_lib.client import FringeClient, make_async_client
 from fringe_lib.edfest_offers import fetch_and_attach_edfest_offers
 from fringe_lib.models import PerformanceRow
 from fringe_lib.scan import (
@@ -83,8 +82,8 @@ async def run_full_scan() -> dict[str, Any]:
         flush=True,
     )
 
-    limits = httpx.Limits(max_connections=30, max_keepalive_connections=20)
-    async with httpx.AsyncClient(timeout=60.0, limits=limits) as client:
+    load_proxy_into_env()
+    async with make_async_client() as client:
         api = FringeClient(client)
         await api.authenticate()
         events = await fetch_all_programme(api, page_size=500)
