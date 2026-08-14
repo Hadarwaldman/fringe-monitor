@@ -174,18 +174,21 @@
         const holdBadge = m.hold_tickets
           ? `<span class="pill available" title="Will hold tickets in your edfringe basket">hold</span>`
           : `<span class="pill unknown">email only</span>`;
+        const show = findShow(m.slug) || findShow(m.show_title);
+        const titleHtml = show?.slug
+          ? `<a class="show-title-link" href="./show.html?slug=${encodeURIComponent(show.slug)}">${escapeHtml(m.show_title)}</a>`
+          : `<strong>${escapeHtml(m.show_title)}</strong>`;
         return `<tr class="${paused ? "monitor-paused" : ""}">
           <td>
-            <strong>${escapeHtml(m.show_title)}</strong>
+            ${titleHtml}
             ${paused ? ` <span class="pill unknown">paused</span>` : ""}
             <div class="dates">${m.url ? `<a href="${escapeAttr(m.url)}" target="_blank" rel="noopener">Ticket page</a>` : ""}</div>
           </td>
-          <td class="dates">${escapeHtml(shortDate(m.start_date))} → ${escapeHtml(shortDate(m.end_date))}</td>
-          <td>${escapeHtml(String(m.quantity || 1))}</td>
-          <td>${holdBadge}</td>
-          <td class="remaining">${statusChips(m)}</td>
-          <td class="dates">${escapeHtml(shortDateTime(m.last_checked_at))}</td>
-          <td class="dates">${holdInfo(m)}</td>
+          <td data-th="Date range" class="dates">${escapeHtml(shortDate(m.start_date))} → ${escapeHtml(shortDate(m.end_date))} · ${escapeHtml(String(m.quantity || 1))} ticket${(m.quantity || 1) === 1 ? "" : "s"}</td>
+          <td data-th="Hold">${holdBadge}</td>
+          <td data-th="Availability" class="remaining">${statusChips(m)}</td>
+          <td data-th="Last check" class="dates">${escapeHtml(shortDateTime(m.last_checked_at))}</td>
+          <td data-th="Last alert / hold" class="dates">${holdInfo(m)}</td>
           <td><div class="btn-row">
             <button type="button" class="btn-link" data-monitor-toggle="${escapeAttr(m.monitor_id)}">${paused ? "Resume" : "Pause"}</button>
             <button type="button" class="btn-link danger" data-monitor-delete="${escapeAttr(m.monitor_id)}">Remove</button>
@@ -194,6 +197,17 @@
       })
       .join("");
     table.hidden = false;
+  }
+
+  function performancesInRange(show, start, end) {
+    return (show.performances || [])
+      .filter((p) => p.date >= start && p.date <= end)
+      .map((p) => ({
+        performance_id: p.performance_id,
+        box_office_id: p.box_office_id || "",
+        date: p.date,
+        time: p.time,
+      }));
   }
 
   $("monitor-form").addEventListener("submit", async (event) => {
@@ -223,6 +237,7 @@
           end_date: end,
           quantity: Number($("monitor-qty").value || 1),
           hold_tickets: $("monitor-hold").checked,
+          performances: performancesInRange(show, start, end),
         }),
       });
       status.textContent = `Monitoring ${show.show_title}. First check within 15 minutes — use “Check now” to run one immediately.`;

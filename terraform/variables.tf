@@ -78,7 +78,13 @@ variable "daily_schedule" {
 }
 
 variable "watchlist_schedule" {
-  description = "EventBridge schedule for watchlist checks"
+  description = "EventBridge schedule for watchlist reopen checks (heavy, full programme)"
   type        = string
   default     = "rate(15 minutes)"
+}
+
+variable "monitor_schedule" {
+  description = "EventBridge schedule for the lightweight show-monitor check"
+  type        = string
+  default     = "rate(3 minutes)"
 }

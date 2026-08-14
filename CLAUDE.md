@@ -22,11 +22,16 @@ backend/
     cart.py             edfringe login + add-to-basket ("hold tickets"); creds from SSM SecureString
     aws_util.py         boto3 helpers: DynamoDB config/watchlist/monitors, S3 writes (Lambda-only)
   lambdas/
-    full_scan/handler.py  Daily job (EventBridge cron 06:00 UTC)
-    watchlist/handler.py  15-min job (EventBridge rate): watchlist reopen emails + show monitors
-    api/handler.py        HTTP API Gateway backend (/config, /watchlist, /monitors, /health)
+    full_scan/handler.py     Daily job (EventBridge cron 06:00 UTC)
+    watchlist/handler.py     15-min job: watchlist reopen emails (full programme fetch) + monitors
+    monitor_check/handler.py 3-min job: lightweight show-monitor check (direct box-office-id price lookups, no programme fetch)
+    api/handler.py           HTTP API Gateway backend (/config, /watchlist, /monitors, /health)
   requirements.txt      Lambda runtime deps (httpx)
-frontend/               Static CloudFront site (index.html/app.js dashboard, monitors.html/monitors.js)
+frontend/               Static CloudFront site. ui.js renders the shared nav (header + mobile
+                        tab bar) and owns user/date-window localStorage. app.js drives three
+                        pages via <body data-page>: index.html (My Fringe itinerary),
+                        shows.html (programme browser), show.html (show detail). Plus
+                        monitors.html/monitors.js and settings.html/settings.js.
 terraform/              All AWS infra; remote S3 state
 scripts/
   package_lambda.sh     Builds build/lambda.zip
@@ -80,9 +85,10 @@ cd terraform && AWS_PROFILE=hadar-pc terraform output
 
 ## Data flow
 
-- Full scan writes `s3://<data-bucket>/data/latest.json` (frontend source of truth), `data/config.json`, and a CSV.
+- Full scan writes `s3://<data-bucket>/data/latest.json` (frontend source of truth), `data/details.json` (show descriptions, venue addresses, EdFest ticket links — used only by show.html; the UI degrades gracefully when it's absent), `data/config.json`, and a CSV.
 - Config + watchlist + monitors live in DynamoDB table `fringe-monitor` (single-table: `CONFIG/MAIN`, `WATCHLIST/<perf_id>`, `ALERT/<perf_id>`, `MONITOR/<monitor_id>`).
 - **Egress proxy (required in AWS):** the edfringe API is behind Cloudflare, which 403s AWS datacenter IPs. All Lambda→edfringe traffic must go through a residential proxy. The proxy URL (`http://user:pass@host:port`) lives ONLY in SSM SecureString `/fringe-monitor/proxy-url`; the Lambdas load it into `FRINGE_PROXY_URL` at runtime via `cart.load_proxy_into_env()`, and `client.make_async_client()` routes through it. Locally (residential IP) leave it unset → direct. Without it, the daily scan and monitors both 403.
+- Monitor check cadence: the lightweight `monitor-check` Lambda runs every 3 min (`rate(3 minutes)`), checking each monitor via direct `performancePrices(box_office_id)` lookups on its stored `performances` (seeded at creation from the frontend's scan data, or self-seeded via one programme fetch on first run). No full programme fetch → cheap enough for frequent runs. The 15-min watchlist job also still checks monitors (it has the programme in hand). Both share the DynamoDB LOCK/WATCHLIST mutex so they never race.
 - Show monitors (monitors.html): one show + date range; the 15-min lambda emails when any performance in range becomes buyable, and (if `hold_tickets`) logs into the user's edfringe account and adds tickets to the basket (~30-min hold). edfringe credentials live ONLY in the SSM SecureString `/fringe-monitor/edfringe-credentials` (JSON `{"email","password"}`), created manually via `aws ssm put-parameter` — never commit them, never put them in Terraform/DynamoDB. Holds are skipped gracefully when the parameter is absent. Hold policy: one hold per monitor per opening (earliest newly-opened performance only) — never re-add on every check.
 - The date window is stored in DynamoDB config; change it via the UI (**Save dates**) or `PUT /config` — takes effect on the next scan.
 - **PlanMyFringe sync** (index.html "Sync calendar" button → `POST /planner/sync`): logs into the user's planmyfringe.co.uk account (classic ASP.NET Web Forms — `__VIEWSTATE` round-trip), scrapes the schedule (CalendarList) and wishlist, matches entries to the latest scan by normalized title, writes `data/planner.json` to S3, and imports unconfirmed schedule entries as watch items (`source: "planmyfringe"` — replaced wholesale each sync, manual/auto items untouched). Entries marked *confirmed* on PlanMyFringe are already-booked shows: shown with a "booked" pill, never watched. Wishlist scores render as ★ pills in the wishlist/compare/All-shows tables. Credentials (JSON `{"user_id","password"}`) live ONLY in SSM SecureString `/fringe-monitor/planmyfringe-credentials` (Lambda) or the gitignored `output/planmyfringe-creds.json` (local CLI `sync_planmyfringe.py`). Credentials can be updated from the UI: settings.html → `PUT /settings/planmyfringe` verifies with a real login then writes the SSM parameter (write-only — `GET` returns just `configured` + masked user id, the password is never sent back). Parser facts validated against the live account (Aug 2026): both the schedule and wishlist tables are on `/CalendarList` (no separate wishlist URL); dates are single-cell separator rows; "confirmed" (booked) is signalled by a `BookShow?...&remove=Y` link on the row; the site hides performances that have already started (past days need `?includepast=Y`).

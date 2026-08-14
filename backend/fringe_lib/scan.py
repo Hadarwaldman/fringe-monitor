@@ -109,6 +109,48 @@ async def fetch_all_programme(
     return list(by_id.values())
 
 
+def collect_show_details(
+    events: list[dict[str, Any]],
+    *,
+    slugs: set[str] | None = None,
+) -> dict[str, dict[str, Any]]:
+    """Show-level detail map keyed by slug (description, venue location, …).
+
+    Written to data/details.json for the show detail page; kept out of
+    latest.json so the dashboard payload stays small. When `slugs` is given,
+    only those shows are included (e.g. shows with performances in the window).
+    """
+    details: dict[str, dict[str, Any]] = {}
+    for event in events:
+        slug = event.get("slug") or ""
+        if not slug or (slugs is not None and slug not in slugs):
+            continue
+        venues = []
+        for v in event.get("venues") or []:
+            name = (v.get("title") or "").strip()
+            if not name:
+                continue
+            venues.append(
+                {
+                    "name": name,
+                    "slug": v.get("slug") or "",
+                    "address": (v.get("address1") or "").strip(),
+                    "post_code": (v.get("postCode") or "").strip(),
+                    "description": (v.get("description") or "").strip(),
+                }
+            )
+        images = [i.get("url") for i in (event.get("images") or []) if i.get("url")]
+        details[slug] = {
+            "title": event.get("title") or "",
+            "description": (event.get("description") or "").strip(),
+            "age_restriction": event.get("ageRestriction") or "",
+            "duration": event.get("duration") or "",
+            "image_url": images[0] if images else "",
+            "venues": venues,
+        }
+    return details
+
+
 def collect_window_rows(
     events: list[dict[str, Any]],
     start: date,

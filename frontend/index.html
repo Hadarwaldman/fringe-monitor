@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Fringe Monitor</title>
+    <title>Fringe Monitor — My Fringe</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -13,297 +13,51 @@
     <link rel="stylesheet" href="./styles.css" />
     <script src="./config.js"></script>
   </head>
-  <body>
+  <body data-nav="my" data-page="my">
+    <div id="site-nav"></div>
     <div class="page">
-      <header class="hero">
-        <div class="hero-top">
-          <p class="brand">Fringe Monitor</p>
-          <a class="back-link" href="./monitors.html">Ticket monitors →</a>
-          <a class="back-link" href="./settings.html">Settings →</a>
-          <div class="user-switcher" role="group" aria-label="Active user">
-            <button type="button" class="user-btn" data-user="hadar" aria-pressed="true">Hadar</button>
-            <button type="button" class="user-btn" data-user="adi" aria-pressed="false">Adi</button>
-          </div>
-        </div>
-        <h1>Sold-out days, reopen alerts, schedule compare</h1>
+      <header class="page-head">
+        <h1>My Fringe</h1>
         <p class="lede">
-          Live Edinburgh Fringe availability for your date window. Sync your PlanMyFringe account to pull your schedule and wishlist, or upload a CSV/PDF export manually.
+          Your schedule, bookings and wishlist in one place. Sync from your
+          PlanMyFringe account, or import a CSV/PDF export.
         </p>
-        <div class="hero-actions">
-          <button type="button" id="sync-planner-btn" class="sync-btn">⟳ Sync calendar</button>
-          <span id="sync-status" class="status" role="status"></span>
-        </div>
         <div class="meta" id="meta">Loading latest scan…</div>
       </header>
 
-      <section class="panel" aria-labelledby="dates-heading">
-        <div class="panel-head">
-          <h2 id="dates-heading">Date window</h2>
-          <p id="dates-lede">Your personal trip dates for filtering. The daily scan covers both people’s windows combined.</p>
-        </div>
-        <form id="config-form" class="config-form">
-          <label>
-            Start
-            <input type="date" id="start-date" required />
-          </label>
-          <label>
-            End
-            <input type="date" id="end-date" required />
-          </label>
-          <label>
-            Nearly sold-out ≤ %
-            <input type="number" id="nearly-threshold" min="1" max="100" value="20" />
-          </label>
-          <button type="submit">Save dates</button>
-          <button type="button" id="run-scan-btn" class="btn-secondary">Run scan now</button>
-          <span id="config-status" class="status" role="status"></span>
-          <span id="scan-status" class="status" role="status"></span>
-        </form>
-      </section>
-
-      <dialog id="scan-confirm" class="confirm-dialog">
-        <form method="dialog" class="confirm-dialog-form">
-          <h3>Run a full scan?</h3>
-          <p>
-            This kicks off a full programme scan on AWS (~a few minutes, thousands of shows).
-            It costs real money (Lambda + API usage). Don’t run it unless you need fresh data
-            before the next daily scan.
-          </p>
-          <label class="confirm-check">
-            <input type="checkbox" id="scan-cost-ack" />
-            I understand this will cost money to run
-          </label>
-          <div class="confirm-actions">
-            <button type="submit" value="cancel" class="btn-secondary">Cancel</button>
-            <button type="submit" value="confirm" id="scan-confirm-ok" disabled>Run scan</button>
-          </div>
-        </form>
-      </dialog>
-
-      <section class="panel" aria-labelledby="compare-heading">
-        <div class="panel-head">
-          <h2 id="compare-heading">Compare schedule</h2>
-          <p id="compare-lede">Upload a PlanMyFringe export — CSV or PDF. Each person keeps their own schedule on this device. Matching is by show name (case-insensitive). Status that day is only for your scheduled date — other open dates are listed separately.</p>
-        </div>
-        <label class="file-label">
+      <div class="action-row">
+        <button type="button" id="sync-planner-btn" class="sync-btn">⟳ Sync calendar</button>
+        <label class="file-label btn-like">
           <input type="file" id="csv-input" accept=".csv,.pdf,text/csv,application/pdf" />
-          Choose CSV or PDF
+          Import CSV/PDF
         </label>
-        <label class="confirm-check past-toggle">
+        <button type="button" id="add-booking-btn" class="btn-secondary">Add booking</button>
+        <label class="past-toggle">
           <input type="checkbox" id="show-past-toggle" />
-          Show past shows
+          Show past
         </label>
-        <div id="csv-status" class="status"></div>
-        <div id="compare-summary" class="status"></div>
-        <div class="table-wrap">
-          <table id="compare-table" hidden>
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Time</th>
-                <th>Show</th>
-                <th>Status that day</th>
-                <th>Remaining</th>
-                <th>Deals</th>
-                <th>Sold out</th>
-                <th>Nearly</th>
-                <th>Available</th>
-                <th>Link</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody></tbody>
-          </table>
-        </div>
-      </section>
+      </div>
+      <div id="sync-status" class="status" role="status"></div>
+      <div id="csv-status" class="status" role="status"></div>
 
-      <section class="panel" aria-labelledby="wishlist-heading">
-        <div class="panel-head">
-          <h2 id="wishlist-heading">Wishlist</h2>
-          <p id="wishlist-lede">Synced from PlanMyFringe. Your scores also appear next to matching shows in the schedule and All shows tables.</p>
-        </div>
-        <div id="wishlist-summary" class="status"></div>
-        <div class="table-wrap">
-          <table id="wishlist-table" hidden>
-            <thead>
-              <tr>
-                <th>Score</th>
-                <th>Show</th>
-                <th>Venue</th>
-                <th>Sold out</th>
-                <th>Available</th>
-                <th>Link</th>
-              </tr>
-            </thead>
-            <tbody></tbody>
-          </table>
-        </div>
-      </section>
+      <div class="chip-row" role="group" aria-label="Filter itinerary" id="itin-filters">
+        <button type="button" class="chip" data-itin-filter="all" aria-pressed="true">All</button>
+        <button type="button" class="chip" data-itin-filter="booked" aria-pressed="false">Booked</button>
+        <button type="button" class="chip" data-itin-filter="risk" aria-pressed="false">At risk</button>
+        <button type="button" class="chip" data-itin-filter="wishlist" aria-pressed="false">Wishlist</button>
+      </div>
 
-      <section class="panel" aria-labelledby="booked-heading">
-        <div class="panel-head">
-          <div class="panel-head-row">
-            <div>
-              <h2 id="booked-heading">Booked tickets</h2>
-              <p id="booked-lede">Shows you’ve already bought. Stored on this device per person — date, price paid, and which deals you used.</p>
-            </div>
-            <button type="button" id="add-booking-btn" class="btn-secondary">Add booking</button>
-          </div>
-        </div>
-        <div id="booked-summary" class="status"></div>
-        <div class="table-wrap">
-          <table id="booked-table" hidden>
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Show</th>
-                <th>Price</th>
-                <th>Deals used</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody></tbody>
-          </table>
-        </div>
-      </section>
+      <div id="itin-summary" class="status"></div>
+      <div id="itinerary"></div>
 
-      <dialog id="monitor-dialog" class="confirm-dialog booking-dialog">
-        <form method="dialog" id="quick-monitor-form" class="confirm-dialog-form">
-          <h3 id="monitor-dialog-title">Monitor a show</h3>
-          <p class="field-hint" id="monitor-dialog-show"></p>
-          <input type="hidden" id="quick-monitor-slug" value="" />
-          <input type="hidden" id="quick-monitor-title" value="" />
-          <input type="hidden" id="quick-monitor-url" value="" />
-          <label>
-            From
-            <input type="date" id="quick-monitor-start" required />
-          </label>
-          <label>
-            To
-            <input type="date" id="quick-monitor-end" required />
-          </label>
-          <label>
-            Tickets
-            <input type="number" id="quick-monitor-qty" min="1" max="6" value="2" />
-          </label>
-          <label class="hold-check">
-            <input type="checkbox" id="quick-monitor-hold" />
-            Hold tickets in basket when they open
-          </label>
-          <p class="field-hint">
-            You’ll get an email when any performance in this range becomes buyable.
-            Manage monitors on the <a href="./monitors.html">Ticket monitors</a> page.
-          </p>
-          <div class="confirm-actions">
-            <button type="submit" value="cancel" formnovalidate class="btn-secondary">Cancel</button>
-            <button type="submit" value="save" id="quick-monitor-save">Start monitoring</button>
-          </div>
-          <span id="quick-monitor-status" class="status" role="status"></span>
-        </form>
-      </dialog>
-
-      <dialog id="booking-dialog" class="confirm-dialog booking-dialog">
-        <form method="dialog" id="booking-form" class="confirm-dialog-form">
-          <h3 id="booking-dialog-title">Book a show</h3>
-          <input type="hidden" id="booking-id" value="" />
-          <label>
-            Show
-            <input type="text" id="booking-show" list="booking-show-list" required placeholder="Show title" autocomplete="off" />
-            <datalist id="booking-show-list"></datalist>
-          </label>
-          <label>
-            Date
-            <input type="date" id="booking-date" required />
-          </label>
-          <label>
-            Price paid (£)
-            <input type="number" id="booking-price" min="0" step="0.01" required placeholder="0.00" />
-          </label>
-          <fieldset class="deal-fieldset">
-            <legend>Deals used</legend>
-            <div id="booking-deals" class="deal-checks"></div>
-            <p class="field-hint">Tick any deals you used for this booking. Options update when you pick a show and date.</p>
-          </fieldset>
-          <label>
-            Notes <span class="optional">(optional)</span>
-            <input type="text" id="booking-notes" placeholder="e.g. 2 tickets, stalls" />
-          </label>
-          <div class="confirm-actions">
-            <button type="submit" value="cancel" formnovalidate class="btn-secondary">Cancel</button>
-            <button type="submit" value="save" id="booking-save">Save booking</button>
-          </div>
-        </form>
-      </dialog>
-
-      <section class="panel" aria-labelledby="shows-heading">
-        <div class="panel-head">
-          <h2 id="shows-heading">All shows</h2>
-          <p>Filter the table without changing the scanner window. Trend is the average % sold per day over the last up to 7 scan days.</p>
+      <section id="wishlist-extra" hidden>
+        <div class="day-group">
+          <h3>Wishlist — not scheduled</h3>
         </div>
-        <div class="filters">
-          <label>
-            Search
-            <input type="search" id="show-search" placeholder="Title or venue" />
-          </label>
-          <label>
-            Status
-            <select id="status-filter">
-              <option value="all">All</option>
-              <option value="sold_out">Any sold out</option>
-              <option value="nearly_sold_out">Any over 75% sold</option>
-              <option value="available">Fully available</option>
-            </select>
-          </label>
-          <label>
-            Show type
-            <select id="genre-filter">
-              <option value="all">All</option>
-            </select>
-          </label>
-          <label>
-            Offers
-            <select id="offer-filter">
-              <option value="all">All</option>
-              <option value="any">Any offer</option>
-              <option value="fringe-friends">Fringe Friends (1+1)</option>
-              <option value="love-the-fringe">Love the Fringe</option>
-              <option value="2for1">2 for 1</option>
-              <option value="20-OFF">20% OFF</option>
-              <option value="5-ticket">£5 Ticket</option>
-              <option value="8-ticket">£8 Ticket</option>
-              <option value="50-off">50% OFF</option>
-            </select>
-          </label>
-          <label>
-            View from
-            <input type="date" id="view-start" />
-          </label>
-          <label>
-            View to
-            <input type="date" id="view-end" />
-          </label>
-        </div>
-        <div class="table-wrap">
-          <table id="shows-table">
-            <thead>
-              <tr>
-                <th>Show</th>
-                <th>Venue</th>
-                <th>Remaining %</th>
-                <th title="Ticket deals on each date (Fringe Friends, Love the Fringe, 2 for 1, …)">Deals</th>
-                <th title="Average daily % sold over the last up to 7 scan days">7d trend</th>
-                <th>Sold out</th>
-                <th>Nearly</th>
-                <th>Available</th>
-                <th></th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody></tbody>
-          </table>
-        </div>
+        <div id="wishlist-cards"></div>
       </section>
     </div>
+    <script src="./ui.js"></script>
     <script src="./app.js"></script>
   </body>
 </html>

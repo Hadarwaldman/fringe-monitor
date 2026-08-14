@@ -59,6 +59,7 @@ data "aws_iam_policy_document" "lambda_app" {
     resources = [
       "arn:aws:lambda:${var.aws_region}:${local.account_id}:function:${local.name}-full-scan",
       "arn:aws:lambda:${var.aws_region}:${local.account_id}:function:${local.name}-watchlist",
+      "arn:aws:lambda:${var.aws_region}:${local.account_id}:function:${local.name}-monitor-check",
     ]
   }
 
