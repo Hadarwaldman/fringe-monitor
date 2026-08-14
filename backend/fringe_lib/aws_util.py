@@ -238,6 +238,177 @@ def delete_monitor(monitor_id: str, table=None) -> None:
     table.delete_item(Key={"pk": "MONITOR", "sk": str(monitor_id)})
 
 
+EDFRINGE_BASKET_URL = "https://www.edfringe.com/tickets/basket"
+
+
+def _fmt_avail(value: str | None) -> str:
+    return {
+        "available": "Available",
+        "nearly_sold_out": "Nearly sold out",
+        "sold_out": "Sold out",
+    }.get(value or "", value or "unknown")
+
+
+def _monitor_email_text(
+    *, show, monitor, openings, statuses, hold, held, checkout_url
+) -> str:
+    lines: list[str] = []
+    if held:
+        lines.append(f"TICKETS HELD IN YOUR BASKET — {show}")
+        lines.append(
+            f"{hold.get('quantity')} ticket(s) for {hold.get('date')} "
+            f"{hold.get('time')} are in your edfringe basket."
+        )
+        lines.append(
+            f"Total £{hold.get('basket_total')} · expires in "
+            f"{hold.get('expires_in') or '~30 minutes'}."
+        )
+        lines.append("")
+        lines.append(f"Complete your purchase → {checkout_url}")
+        lines.append(
+            "(Log in as waldieebar@gmail.com — the basket is on that account.)"
+        )
+    else:
+        lines.append(f"TICKETS AVAILABLE — {show}")
+        if hold is not None and not hold.get("success"):
+            lines.append(
+                f"Auto-hold could not be placed ({hold.get('error')}). "
+                "Book manually below."
+            )
+        lines.append("")
+        lines.append(f"Book now → {monitor.get('url') or checkout_url}")
+
+    lines.append("")
+    lines.append("Newly available:")
+    for item in openings:
+        rem = item.get("percent_remaining")
+        rem_txt = f" · ~{rem}% left" if rem is not None else ""
+        lines.append(
+            f"  • {item.get('date')} {item.get('time')} "
+            f"({_fmt_avail(item.get('availability'))}{rem_txt})"
+        )
+
+    if statuses:
+        lines.append("")
+        lines.append(
+            f"All monitored performances ({monitor.get('start_date')} → "
+            f"{monitor.get('end_date')}):"
+        )
+        for s in statuses:
+            rem = s.get("percent_remaining")
+            rem_txt = f" · ~{rem}% left" if rem is not None else ""
+            lines.append(
+                f"  • {s.get('date')} {s.get('time')}: "
+                f"{_fmt_avail(s.get('availability'))}{rem_txt}"
+            )
+
+    lines.append("")
+    lines.append("— fringe-monitor")
+    return "\n".join(lines)
+
+
+def _monitor_email_html(
+    *, show, monitor, openings, statuses, hold, held, checkout_url
+) -> str:
+    import html
+
+    esc = html.escape
+    show_e = esc(str(show))
+    row_style = "padding:4px 0;border-bottom:1px solid #eee;font-size:14px;"
+
+    def perf_rows(items: list[dict[str, Any]]) -> str:
+        out = []
+        for it in items:
+            rem = it.get("percent_remaining")
+            rem_txt = f" · ~{rem}% left" if rem is not None else ""
+            avail = _fmt_avail(it.get("availability"))
+            colour = {
+                "Available": "#1f6b3a",
+                "Nearly sold out": "#8a4b12",
+                "Sold out": "#8b2430",
+            }.get(avail, "#5c564c")
+            out.append(
+                f'<tr><td style="{row_style}">{esc(str(it.get("date")))} '
+                f'{esc(str(it.get("time")))}</td>'
+                f'<td style="{row_style}color:{colour};text-align:right;">'
+                f"{esc(avail)}{esc(rem_txt)}</td></tr>"
+            )
+        return "".join(out)
+
+    if held:
+        banner = (
+            f'<div style="background:#d7efe9;border:1px solid #0f6a5a;'
+            f'border-radius:8px;padding:16px;">'
+            f'<div style="font-size:18px;font-weight:700;color:#0f4a40;">'
+            f"🎟️ Tickets held in your basket</div>"
+            f'<p style="margin:8px 0 0;font-size:14px;color:#1c1915;">'
+            f"<strong>{hold.get('quantity')}</strong> ticket(s) for "
+            f"<strong>{esc(str(hold.get('date')))} {esc(str(hold.get('time')))}</strong> "
+            f"are in your edfringe basket.<br>"
+            f"Total <strong>£{esc(str(hold.get('basket_total')))}</strong> · "
+            f"expires in {esc(str(hold.get('expires_in') or '~30 minutes'))}.</p></div>"
+        )
+        cta_label = "Complete purchase in basket"
+        cta_url = checkout_url
+        cta_note = (
+            "<p style=\"font-size:12px;color:#5c564c;margin:8px 0 0;\">"
+            "Log in as <strong>waldieebar@gmail.com</strong> — the basket is on "
+            "that account.</p>"
+        )
+    else:
+        note = ""
+        if hold is not None and not hold.get("success"):
+            note = (
+                f'<p style="margin:8px 0 0;font-size:13px;color:#8a4b12;">'
+                f"Auto-hold could not be placed: {esc(str(hold.get('error')))}. "
+                f"Book manually below.</p>"
+            )
+        banner = (
+            f'<div style="background:#d7efe9;border:1px solid #0f6a5a;'
+            f'border-radius:8px;padding:16px;">'
+            f'<div style="font-size:18px;font-weight:700;color:#0f4a40;">'
+            f"🎟️ Tickets available</div>{note}</div>"
+        )
+        cta_label = "Book now on edfringe"
+        cta_url = monitor.get("url") or checkout_url
+        cta_note = ""
+
+    button = (
+        f'<a href="{esc(cta_url)}" '
+        f'style="display:inline-block;background:#0f6a5a;color:#f7fffc;'
+        f'text-decoration:none;font-weight:600;padding:12px 22px;border-radius:8px;'
+        f'font-size:15px;">{esc(cta_label)}</a>'
+    )
+
+    opening_tbl = (
+        f'<table style="width:100%;border-collapse:collapse;margin-top:6px;">'
+        f"{perf_rows(openings)}</table>"
+    )
+    status_tbl = ""
+    if statuses:
+        status_tbl = (
+            f'<p style="font-size:13px;color:#5c564c;margin:20px 0 4px;">'
+            f"All monitored performances "
+            f"({esc(str(monitor.get('start_date')))} → "
+            f"{esc(str(monitor.get('end_date')))})</p>"
+            f'<table style="width:100%;border-collapse:collapse;">'
+            f"{perf_rows(statuses)}</table>"
+        )
+
+    return (
+        f'<div style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;'
+        f'max-width:560px;margin:0 auto;color:#1c1915;">'
+        f'<h1 style="font-size:20px;margin:0 0 4px;">{show_e}</h1>'
+        f"{banner}"
+        f'<div style="margin:18px 0;">{button}{cta_note}</div>'
+        f'<p style="font-size:13px;color:#5c564c;margin:0 0 4px;">Newly available</p>'
+        f"{opening_tbl}"
+        f"{status_tbl}"
+        f'<p style="font-size:12px;color:#9a948a;margin-top:24px;">— fringe-monitor</p>'
+        f"</div>"
+    )
+
+
 def send_monitor_email(
     *,
     to_address: str,
@@ -248,63 +419,34 @@ def send_monitor_email(
     hold: dict[str, Any] | None,
 ) -> None:
     show = monitor.get("show_title") or monitor.get("slug") or "show"
-    lines = [
-        f"Fringe Monitor: tickets are available for {show}!",
-        f"Monitored range: {monitor.get('start_date')} → {monitor.get('end_date')}",
-        "",
-        "Newly available:",
-    ]
-    for item in openings:
-        rem = item.get("percent_remaining")
-        rem_txt = f", ~{rem}% remaining" if rem is not None else ""
-        lines.append(
-            f"- {item.get('date')} {item.get('time')} ({item.get('availability')}{rem_txt})"
-        )
-
-    if hold is not None:
-        lines.append("")
-        if hold.get("success"):
-            lines.extend(
-                [
-                    f"✅ {hold.get('quantity')} ticket(s) for {hold.get('date')} "
-                    f"{hold.get('time')} are HELD in your edfringe basket "
-                    f"({hold.get('price_band') or 'full price'}, £{hold.get('unit_price')}).",
-                    f"Basket total: £{hold.get('basket_total')} — expires in "
-                    f"{hold.get('expires_in') or '~30 minutes'}.",
-                    "Log in at https://www.edfringe.com and open your basket to "
-                    "complete the purchase before it expires.",
-                ]
-            )
-        else:
-            lines.append(
-                f"⚠️ Could not hold tickets automatically: {hold.get('error')}. "
-                "Book manually via the link below."
-            )
-
-    if monitor.get("url"):
-        lines.extend(["", f"Book here: {monitor['url']}"])
-
-    if statuses:
-        lines.extend(["", "All monitored performances right now:"])
-        for s in statuses:
-            rem = s.get("percent_remaining")
-            rem_txt = f" (~{rem}% left)" if rem is not None else ""
-            lines.append(
-                f"- {s.get('date')} {s.get('time')}: {s.get('availability')}{rem_txt}"
-            )
-
-    lines.extend(["", "— fringe-monitor"])
-    held = hold.get("success") if hold else False
-    subject = (
-        f"[fringe-monitor] {'Tickets HELD' if held else 'Tickets available'}: {show}"
+    held = bool(hold.get("success")) if hold else False
+    checkout_url = EDFRINGE_BASKET_URL
+    kwargs = dict(
+        show=show,
+        monitor=monitor,
+        openings=openings,
+        statuses=statuses,
+        hold=hold,
+        held=held,
+        checkout_url=checkout_url,
     )
+    subject = f"{'🎟️ Tickets HELD' if held else '🎟️ Tickets available'}: {show}"
     ses_client().send_email(
         FromEmailAddress=from_address,
         Destination={"ToAddresses": [to_address]},
         Content={
             "Simple": {
                 "Subject": {"Data": subject, "Charset": "UTF-8"},
-                "Body": {"Text": {"Data": "\n".join(lines), "Charset": "UTF-8"}},
+                "Body": {
+                    "Text": {
+                        "Data": _monitor_email_text(**kwargs),
+                        "Charset": "UTF-8",
+                    },
+                    "Html": {
+                        "Data": _monitor_email_html(**kwargs),
+                        "Charset": "UTF-8",
+                    },
+                },
             }
         },
     )
