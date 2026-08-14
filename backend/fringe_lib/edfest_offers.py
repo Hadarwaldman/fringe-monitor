@@ -15,7 +15,9 @@ from .models import PerformanceRow
 EDFEST_BASE = "https://edfest.com"
 OFFERS_URL = f"{EDFEST_BASE}/api/projects/offers"
 PRODUCTS_URL = f"{EDFEST_BASE}/api/products"
+PROJECTS_URL = f"{EDFEST_BASE}/api/projects"
 OFFERS_PAGE_URL = f"{EDFEST_BASE}/offers"
+EDFEST_SHOW_URL = f"{EDFEST_BASE}/whats-on/{{slug}}"
 
 # Prefer larger pages; API accepts at least 200.
 PAGE_LIMIT = 200
@@ -100,6 +102,44 @@ def _merge_offer(target: list[dict[str, str]], offer: dict[str, str]) -> None:
             "slug": offer.get("slug") or "",
         }
     )
+
+
+async def fetch_edfest_title_slugs(
+    client: httpx.AsyncClient,
+    *,
+    page_limit: int = PAGE_LIMIT,
+    max_pages: int = 50,
+) -> dict[str, str]:
+    """Map normalized show title → EdFest slug for the full published catalogue.
+
+    Used to build per-show EdFest ticket links (EDFEST_SHOW_URL) even for
+    shows that have no current offer. Paginates /api/projects until a short
+    page; failures should be treated as non-fatal by callers.
+    """
+    slugs: dict[str, str] = {}
+    page = 1
+    while page <= max_pages:
+        resp = await client.get(
+            PROJECTS_URL,
+            params={"page": page, "limit": page_limit},
+            headers={"Accept": "application/json"},
+        )
+        resp.raise_for_status()
+        batch = resp.json()
+        if not isinstance(batch, list) or not batch:
+            break
+        for row in batch:
+            if not isinstance(row, dict):
+                continue
+            key = normalize_title(row.get("name") or "")
+            slug = (row.get("slug") or "").strip()
+            if key and slug:
+                slugs.setdefault(key, slug)
+        if len(batch) < page_limit:
+            break
+        page += 1
+    print(f"EdFest catalogue: {len(slugs)} shows ({page} page(s))", flush=True)
+    return slugs
 
 
 async def fetch_offer_products(client: httpx.AsyncClient) -> list[dict[str, str]]:

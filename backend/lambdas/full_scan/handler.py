@@ -16,10 +16,16 @@ from fringe_lib.aws_util import (
 )
 from fringe_lib.cart import load_proxy_into_env
 from fringe_lib.client import FringeClient, make_async_client
-from fringe_lib.edfest_offers import fetch_and_attach_edfest_offers
+from fringe_lib.edfest_offers import (
+    EDFEST_SHOW_URL,
+    fetch_and_attach_edfest_offers,
+    fetch_edfest_title_slugs,
+    normalize_title,
+)
 from fringe_lib.models import PerformanceRow
 from fringe_lib.scan import (
     build_latest_payload,
+    collect_show_details,
     collect_window_rows,
     enrich_with_prices,
     fetch_all_programme,
@@ -101,6 +107,11 @@ async def run_full_scan() -> dict[str, Any]:
             start=start,
             end=end,
         )
+        try:
+            edfest_slugs = await fetch_edfest_title_slugs(client)
+        except Exception as exc:  # noqa: BLE001 — links are nice-to-have
+            print(f"warn: EdFest catalogue fetch failed: {exc}", flush=True)
+            edfest_slugs = {}
 
     payload = build_latest_payload(
         classified,
@@ -119,6 +130,19 @@ async def run_full_scan() -> dict[str, Any]:
     put_json_s3(data_bucket, "data/history.json", history)
 
     put_json_s3(data_bucket, "data/latest.json", payload)
+
+    # Show detail pages: descriptions, venue addresses, EdFest ticket links.
+    slugs_in_window = {s["slug"] for s in payload["shows"] if s.get("slug")}
+    details = collect_show_details(events, slugs=slugs_in_window)
+    for det in details.values():
+        edfest_slug = edfest_slugs.get(normalize_title(det.get("title") or ""))
+        if edfest_slug:
+            det["edfest_url"] = EDFEST_SHOW_URL.format(slug=edfest_slug)
+    put_json_s3(
+        data_bucket,
+        "data/details.json",
+        {"fetched_at": payload["fetched_at"], "shows": details},
+    )
     put_json_s3(
         data_bucket,
         "data/config.json",

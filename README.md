@@ -150,19 +150,30 @@ CORS is open (`*`) so the CloudFront site can call it.
 
 ### Frontend
 
-Static files in S3, served by CloudFront:
+Static files in S3, served by CloudFront. Four destinations share a nav header
+(desktop) / bottom tab bar (mobile), rendered by `ui.js`:
 
-- `/` — UI (`index.html`, `app.js`, `styles.css`)
+- `/` — **My Fringe** (`index.html`, `app.js`): itinerary grouped by day merging
+  the PlanMyFringe schedule, local bookings and wishlist; filter chips
+  (All / Booked / At risk / Wishlist); sync + CSV/PDF import.
+- `/shows.html` — **Shows** browser (`app.js`): search + availability filter up
+  front, the rest (genre, offers, view dates) behind a "More filters"
+  disclosure; table on desktop, cards on mobile; incremental "Show more"
+  rendering.
+- `/show.html?slug=…` — **Show detail** (`app.js`): description, image,
+  duration/age facts, venue address with a Google Maps link, buy links to both
+  edfringe.com and EdFest.com, per-day availability chips, Book/Monitor.
 - `/monitors.html` — show monitors page (`monitors.js`)
+- `/settings.html` — active user, per-user date window, manual scan trigger,
+  PlanMyFringe credentials (`settings.js`)
 - `/data/latest.json` — scan results (OAC from data bucket)
+- `/data/details.json` — show descriptions, venue addresses, EdFest links
 - `/data/config.json` — config mirror
 - `config.js` — injects `apiUrl` at deploy time
 
-UI features:
-
-1. **Date window** — save via API; next daily/watchlist runs use it. Table “view from/to” filters display only.
-2. **All shows table** — search, status filter, per-day remaining % (from the prices API), sold-out / nearly / available date lists, ticket links.
-3. **CSV compare** — upload a PlanMyFringe export (`Date`, `Name`, `Venue`, …). Matching is case-insensitive show-name normalize; each schedule row shows status and remaining % **on that day** plus that show’s sold-out days.
+Schedule matching is a case-insensitive show-name normalize; each itinerary
+card shows status and remaining % **on that day**. Booked entries (PlanMyFringe
+confirmed or local bookings with price/deals) render as `✓ booked`.
 
 ### Availability labels
 

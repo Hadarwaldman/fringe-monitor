@@ -13,24 +13,93 @@
     <link rel="stylesheet" href="./styles.css" />
     <script src="./config.js"></script>
   </head>
-  <body>
+  <body data-nav="settings" data-page="settings">
+    <div id="site-nav"></div>
     <div class="page">
-      <header class="hero">
-        <div class="hero-top">
-          <p class="brand">Settings</p>
-          <a class="back-link" href="./index.html">← Dashboard</a>
-        </div>
-        <h1>Account connections</h1>
+      <header class="page-head">
+        <h1>Settings</h1>
         <p class="lede">
-          Credentials are verified with a real login, then stored encrypted on AWS
-          (SSM SecureString). They are never shown back here and never leave the server.
+          Who's using the app, trip dates for the scanner, and account
+          connections.
         </p>
       </header>
+
+      <section class="panel" aria-labelledby="user-heading">
+        <div class="panel-head">
+          <h2 id="user-heading">Active user</h2>
+          <p>
+            Schedules, bookings and date windows are stored per person
+            <strong>on this device</strong> — switching here changes whose data
+            every page shows.
+          </p>
+        </div>
+        <div class="chip-row" id="user-switcher" role="group" aria-label="Active user"></div>
+      </section>
+
+      <section class="panel" aria-labelledby="dates-heading">
+        <div class="panel-head">
+          <h2 id="dates-heading">Date window</h2>
+          <p id="dates-lede">
+            Your trip dates, used to filter every page. The daily scan covers
+            both people's windows combined.
+          </p>
+        </div>
+        <form id="config-form" class="config-form">
+          <label>
+            Start
+            <input type="date" id="start-date" required />
+          </label>
+          <label>
+            End
+            <input type="date" id="end-date" required />
+          </label>
+          <label>
+            Nearly sold-out ≤ %
+            <input type="number" id="nearly-threshold" min="1" max="100" value="20" />
+          </label>
+          <button type="submit">Save dates</button>
+          <span id="config-status" class="status" role="status"></span>
+        </form>
+      </section>
+
+      <section class="panel" aria-labelledby="scan-heading">
+        <div class="panel-head">
+          <h2 id="scan-heading">Scanner</h2>
+          <p>
+            The full programme scan runs daily at 06:00 UTC; the watchlist and
+            monitors re-check every 15 minutes. You can force a full scan now
+            if you need fresh data.
+          </p>
+        </div>
+        <div class="action-row">
+          <button type="button" id="run-scan-btn" class="btn-secondary">Run scan now</button>
+          <span id="scan-status" class="status" role="status"></span>
+        </div>
+      </section>
+
+      <dialog id="scan-confirm" class="confirm-dialog">
+        <form method="dialog" class="confirm-dialog-form">
+          <h3>Run a full scan?</h3>
+          <p>
+            This kicks off a full programme scan on AWS (~a few minutes, thousands of shows).
+            It costs real money (Lambda + API usage). Don’t run it unless you need fresh data
+            before the next daily scan.
+          </p>
+          <label class="confirm-check">
+            <input type="checkbox" id="scan-cost-ack" />
+            I understand this will cost money to run
+          </label>
+          <div class="confirm-actions">
+            <button type="submit" value="cancel" class="btn-secondary">Cancel</button>
+            <button type="submit" value="confirm" id="scan-confirm-ok" disabled>Run scan</button>
+          </div>
+        </form>
+      </dialog>
 
       <section class="panel" aria-labelledby="pmf-heading">
         <div class="panel-head">
           <h2 id="pmf-heading">PlanMyFringe account</h2>
-          <p>Used by the <strong>Sync calendar</strong> button to pull your schedule, wishlist and scores from planmyfringe.co.uk.</p>
+          <p>Used by the <strong>Sync calendar</strong> button to pull your schedule, wishlist and scores from planmyfringe.co.uk. Credentials are verified with a real login, then stored encrypted on AWS (SSM SecureString) — they are never shown back here.</p>
         </div>
         <div id="pmf-current" class="status">Checking current status…</div>
         <form id="pmf-form" class="config-form">
@@ -47,6 +116,7 @@
         </form>
       </section>
     </div>
+    <script src="./ui.js"></script>
     <script src="./settings.js"></script>
   </body>
 </html>

@@ -174,18 +174,21 @@
         const holdBadge = m.hold_tickets
           ? `<span class="pill available" title="Will hold tickets in your edfringe basket">hold</span>`
           : `<span class="pill unknown">email only</span>`;
+        const show = findShow(m.slug) || findShow(m.show_title);
+        const titleHtml = show?.slug
+          ? `<a class="show-title-link" href="./show.html?slug=${encodeURIComponent(show.slug)}">${escapeHtml(m.show_title)}</a>`
+          : `<strong>${escapeHtml(m.show_title)}</strong>`;
         return `<tr class="${paused ? "monitor-paused" : ""}">
           <td>
-            <strong>${escapeHtml(m.show_title)}</strong>
+            ${titleHtml}
             ${paused ? ` <span class="pill unknown">paused</span>` : ""}
             <div class="dates">${m.url ? `<a href="${escapeAttr(m.url)}" target="_blank" rel="noopener">Ticket page</a>` : ""}</div>
           </td>
-          <td class="dates">${escapeHtml(shortDate(m.start_date))} → ${escapeHtml(shortDate(m.end_date))}</td>
-          <td>${escapeHtml(String(m.quantity || 1))}</td>
-          <td>${holdBadge}</td>
-          <td class="remaining">${statusChips(m)}</td>
-          <td class="dates">${escapeHtml(shortDateTime(m.last_checked_at))}</td>
-          <td class="dates">${holdInfo(m)}</td>
+          <td data-th="Date range" class="dates">${escapeHtml(shortDate(m.start_date))} → ${escapeHtml(shortDate(m.end_date))} · ${escapeHtml(String(m.quantity || 1))} ticket${(m.quantity || 1) === 1 ? "" : "s"}</td>
+          <td data-th="Hold">${holdBadge}</td>
+          <td data-th="Availability" class="remaining">${statusChips(m)}</td>
+          <td data-th="Last check" class="dates">${escapeHtml(shortDateTime(m.last_checked_at))}</td>
+          <td data-th="Last alert / hold" class="dates">${holdInfo(m)}</td>
           <td><div class="btn-row">
             <button type="button" class="btn-link" data-monitor-toggle="${escapeAttr(m.monitor_id)}">${paused ? "Resume" : "Pause"}</button>
             <button type="button" class="btn-link danger" data-monitor-delete="${escapeAttr(m.monitor_id)}">Remove</button>

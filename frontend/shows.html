@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Fringe Monitor — Shows</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700;1,9..40,400&family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+    <script src="./config.js"></script>
+  </head>
+  <body data-nav="shows" data-page="shows">
+    <div id="site-nav"></div>
+    <div class="page">
+      <header class="page-head">
+        <h1>Shows</h1>
+        <p class="lede">
+          The full programme from the latest scan. Availability chips show each
+          date in your window — tap a show for its description, location and
+          ticket links.
+        </p>
+        <div class="meta" id="meta">Loading latest scan…</div>
+      </header>
+
+      <section class="panel" aria-label="Browse shows">
+        <div class="search-row">
+          <input type="search" id="show-search" placeholder="Search title or venue" aria-label="Search shows" />
+          <select id="status-filter" aria-label="Availability filter">
+            <option value="all">All availability</option>
+            <option value="sold_out">Any sold out</option>
+            <option value="nearly_sold_out">Any over 75% sold</option>
+            <option value="available">Fully available</option>
+          </select>
+        </div>
+        <details class="adv-filters">
+          <summary>More filters</summary>
+          <div class="filters">
+            <label>
+              Show type
+              <select id="genre-filter">
+                <option value="all">All</option>
+              </select>
+            </label>
+            <label>
+              Offers
+              <select id="offer-filter">
+                <option value="all">All</option>
+                <option value="any">Any offer</option>
+                <option value="fringe-friends">Fringe Friends (1+1)</option>
+                <option value="love-the-fringe">Love the Fringe</option>
+                <option value="2for1">2 for 1</option>
+                <option value="20-OFF">20% OFF</option>
+                <option value="5-ticket">£5 Ticket</option>
+                <option value="8-ticket">£8 Ticket</option>
+                <option value="50-off">50% OFF</option>
+              </select>
+            </label>
+            <label>
+              View from
+              <input type="date" id="view-start" />
+            </label>
+            <label>
+              View to
+              <input type="date" id="view-end" />
+            </label>
+          </div>
+        </details>
+        <div id="shows-summary" class="status"></div>
+        <div class="table-wrap">
+          <table id="shows-table" class="cardable">
+            <thead>
+              <tr>
+                <th>Show</th>
+                <th>Venue</th>
+                <th title="Availability on each date in the view window">Availability</th>
+                <th title="Ticket deals on each date (Fringe Friends, Love the Fringe, 2 for 1, …)">Deals</th>
+                <th title="Average daily % sold over the last up to 7 scan days">7d trend</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="show-more-row">
+          <button type="button" id="show-more-btn" class="btn-secondary" hidden>Show more</button>
+        </div>
+      </section>
+    </div>
+    <script src="./ui.js"></script>
+    <script src="./app.js"></script>
+  </body>
+</html>

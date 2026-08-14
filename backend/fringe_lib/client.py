@@ -39,7 +39,11 @@ query EventsSearch($criteria: SearchCriteriaInput!) {
       startingDate
       endingDate
       datesDisplay
-      venues { title }
+      description
+      ageRestriction
+      duration
+      images { url }
+      venues { title slug address1 postCode description }
       performances {
         id
         title

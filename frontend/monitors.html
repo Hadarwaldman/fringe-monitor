@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Fringe Monitor — Ticket monitors</title>
+    <title>Fringe Monitor — Monitors</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -13,20 +13,16 @@
     <link rel="stylesheet" href="./styles.css" />
     <script src="./config.js"></script>
   </head>
-  <body>
+  <body data-nav="monitors" data-page="monitors">
+    <div id="site-nav"></div>
     <div class="page">
-      <header class="hero">
-        <div class="hero-top">
-          <p class="brand">Ticket monitors</p>
-          <a class="back-link" href="./index.html">← Dashboard</a>
-          <a class="back-link" href="./settings.html">Settings →</a>
-        </div>
-        <h1>Watch a show, get emailed the moment tickets appear</h1>
+      <header class="page-head">
+        <h1>Monitors</h1>
         <p class="lede">
-          Pick a show and a date range. Every 15 minutes the monitor re-checks live
-          availability and emails you when any performance in the range opens up.
-          Optionally it can also hold tickets in your edfringe basket — you then have
-          ~30 minutes to log in and complete the purchase.
+          Watch a show and get emailed the moment tickets appear. Every 15
+          minutes each monitor re-checks live availability; optionally it can
+          also hold tickets in your edfringe basket (~30 minutes to complete
+          the purchase).
         </p>
         <div class="meta" id="monitor-meta">Loading monitors…</div>
       </header>
@@ -94,12 +90,11 @@
         </div>
         <div id="monitors-status" class="status"></div>
         <div class="table-wrap">
-          <table id="monitors-table" hidden>
+          <table id="monitors-table" class="cardable" hidden>
             <thead>
               <tr>
                 <th>Show</th>
                 <th>Date range</th>
-                <th>Qty</th>
                 <th>Hold</th>
                 <th>Availability</th>
                 <th>Last check</th>
@@ -112,6 +107,7 @@
         </div>
       </section>
     </div>
+    <script src="./ui.js"></script>
     <script src="./monitors.js"></script>
   </body>
 </html>

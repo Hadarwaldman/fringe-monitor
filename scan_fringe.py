@@ -19,13 +19,19 @@ from typing import Any
 import httpx
 
 from backend.fringe_lib.client import FringeClient
-from backend.fringe_lib.edfest_offers import fetch_and_attach_edfest_offers
+from backend.fringe_lib.edfest_offers import (
+    EDFEST_SHOW_URL,
+    fetch_and_attach_edfest_offers,
+    fetch_edfest_title_slugs,
+    normalize_title,
+)
 from backend.fringe_lib.models import PerformanceRow
 from backend.fringe_lib.scan import (
     DEFAULT_END,
     DEFAULT_START,
     EDINBURGH,
     build_latest_payload,
+    collect_show_details,
     collect_window_rows,
     enrich_with_prices,
     fetch_all_programme,
@@ -150,6 +156,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--summary-output", default="output/fringe_show_summary.csv")
     parser.add_argument("--raw-output", default="output/fringe_raw_programme.json")
     parser.add_argument("--latest-json", default="output/latest.json")
+    parser.add_argument("--details-json", default="output/details.json")
     parser.add_argument("--history-json", default="output/history.json")
     parser.add_argument("--nearly-threshold", type=int, default=20)
     parser.add_argument("--concurrency", type=int, default=25)
@@ -195,6 +202,11 @@ async def async_main(args: argparse.Namespace) -> int:
             start=start,
             end=end,
         )
+        try:
+            edfest_slugs = await fetch_edfest_title_slugs(client)
+        except Exception as exc:  # noqa: BLE001 — links are nice-to-have
+            print(f"warn: EdFest catalogue fetch failed: {exc}", flush=True)
+            edfest_slugs = {}
 
     out = Path(args.output)
     summary = Path(args.summary_output)
@@ -223,6 +235,20 @@ async def async_main(args: argparse.Namespace) -> int:
     latest_path = Path(args.latest_json)
     latest_path.parent.mkdir(parents=True, exist_ok=True)
     latest_path.write_text(json.dumps(latest), encoding="utf-8")
+
+    # Show detail pages: descriptions, venue addresses, EdFest ticket links.
+    slugs_in_window = {s["slug"] for s in latest["shows"] if s.get("slug")}
+    details = collect_show_details(events, slugs=slugs_in_window)
+    for det in details.values():
+        edfest_slug = edfest_slugs.get(normalize_title(det.get("title") or ""))
+        if edfest_slug:
+            det["edfest_url"] = EDFEST_SHOW_URL.format(slug=edfest_slug)
+    details_path = Path(args.details_json)
+    details_path.parent.mkdir(parents=True, exist_ok=True)
+    details_path.write_text(
+        json.dumps({"fetched_at": latest["fetched_at"], "shows": details}),
+        encoding="utf-8",
+    )
 
     sold = latest["counts"]["sold_out"]
     nearly = latest["counts"]["nearly_sold_out"]

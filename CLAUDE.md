@@ -26,7 +26,11 @@ backend/
     watchlist/handler.py  15-min job (EventBridge rate): watchlist reopen emails + show monitors
     api/handler.py        HTTP API Gateway backend (/config, /watchlist, /monitors, /health)
   requirements.txt      Lambda runtime deps (httpx)
-frontend/               Static CloudFront site (index.html/app.js dashboard, monitors.html/monitors.js)
+frontend/               Static CloudFront site. ui.js renders the shared nav (header + mobile
+                        tab bar) and owns user/date-window localStorage. app.js drives three
+                        pages via <body data-page>: index.html (My Fringe itinerary),
+                        shows.html (programme browser), show.html (show detail). Plus
+                        monitors.html/monitors.js and settings.html/settings.js.
 terraform/              All AWS infra; remote S3 state
 scripts/
   package_lambda.sh     Builds build/lambda.zip
@@ -80,7 +84,7 @@ cd terraform && AWS_PROFILE=hadar-pc terraform output
 
 ## Data flow
 
-- Full scan writes `s3://<data-bucket>/data/latest.json` (frontend source of truth), `data/config.json`, and a CSV.
+- Full scan writes `s3://<data-bucket>/data/latest.json` (frontend source of truth), `data/details.json` (show descriptions, venue addresses, EdFest ticket links — used only by show.html; the UI degrades gracefully when it's absent), `data/config.json`, and a CSV.
 - Config + watchlist + monitors live in DynamoDB table `fringe-monitor` (single-table: `CONFIG/MAIN`, `WATCHLIST/<perf_id>`, `ALERT/<perf_id>`, `MONITOR/<monitor_id>`).
 - **Egress proxy (required in AWS):** the edfringe API is behind Cloudflare, which 403s AWS datacenter IPs. All Lambda→edfringe traffic must go through a residential proxy. The proxy URL (`http://user:pass@host:port`) lives ONLY in SSM SecureString `/fringe-monitor/proxy-url`; the Lambdas load it into `FRINGE_PROXY_URL` at runtime via `cart.load_proxy_into_env()`, and `client.make_async_client()` routes through it. Locally (residential IP) leave it unset → direct. Without it, the daily scan and monitors both 403.
 - Show monitors (monitors.html): one show + date range; the 15-min lambda emails when any performance in range becomes buyable, and (if `hold_tickets`) logs into the user's edfringe account and adds tickets to the basket (~30-min hold). edfringe credentials live ONLY in the SSM SecureString `/fringe-monitor/edfringe-credentials` (JSON `{"email","password"}`), created manually via `aws ssm put-parameter` — never commit them, never put them in Terraform/DynamoDB. Holds are skipped gracefully when the parameter is absent. Hold policy: one hold per monitor per opening (earliest newly-opened performance only) — never re-add on every check.
