@@ -70,6 +70,37 @@ mutation AddTickets($performanceRef: String!, $customerId: Int, $sessionId: Stri
 """
 
 
+def load_proxy_into_env() -> str | None:
+    """Populate FRINGE_PROXY_URL from the SSM SecureString named by
+    FRINGE_PROXY_PARAM, so make_async_client() routes through the residential
+    proxy. The parameter's value is a full proxy URL
+    (http://user:pass@host:port). Idempotent; returns the URL or None.
+
+    Kept out of Terraform state: only the parameter *name* is configured; the
+    secret value is written manually via `aws ssm put-parameter`.
+    """
+    if os.environ.get("FRINGE_PROXY_URL"):
+        return os.environ["FRINGE_PROXY_URL"]
+    param_name = os.environ.get("FRINGE_PROXY_PARAM")
+    if not param_name:
+        return None
+    import boto3
+    from botocore.exceptions import ClientError
+
+    try:
+        resp = boto3.client("ssm").get_parameter(Name=param_name, WithDecryption=True)
+    except ClientError as exc:
+        if exc.response["Error"]["Code"] == "ParameterNotFound":
+            print("warn: proxy SSM parameter not found; using direct egress", flush=True)
+            return None
+        raise
+    url = (resp["Parameter"]["Value"] or "").strip()
+    if not url:
+        return None
+    os.environ["FRINGE_PROXY_URL"] = url
+    return url
+
+
 def get_fringe_credentials() -> dict[str, str] | None:
     """Read {"email", "password"} from SSM; None when not configured."""
     param_name = os.environ.get("EDFRINGE_CREDS_PARAM")

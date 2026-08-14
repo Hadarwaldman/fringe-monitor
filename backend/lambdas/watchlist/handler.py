@@ -5,8 +5,6 @@ import json
 from datetime import date
 from typing import Any
 
-import httpx
-
 from fringe_lib.aws_util import (
     env,
     get_alert_state,
@@ -17,7 +15,8 @@ from fringe_lib.aws_util import (
     send_reopen_email,
     upsert_watch_items,
 )
-from fringe_lib.client import FringeClient
+from fringe_lib.cart import load_proxy_into_env
+from fringe_lib.client import FringeClient, make_async_client
 from fringe_lib.monitors import run_monitor_checks
 from fringe_lib.scan import (
     collect_window_rows,
@@ -55,8 +54,8 @@ async def run_watchlist_check() -> dict[str, Any]:
     )
 
     monitor_result: dict[str, Any] = {"monitors_checked": 0}
-    limits = httpx.Limits(max_connections=30, max_keepalive_connections=20)
-    async with httpx.AsyncClient(timeout=60.0, limits=limits) as client:
+    load_proxy_into_env()
+    async with make_async_client() as client:
         api = FringeClient(client)
         await api.authenticate()
         # Listing-only programme fetch (shared by watchlist + monitors), then

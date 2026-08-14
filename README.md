@@ -110,6 +110,25 @@ AWS_PROFILE=hadar-pc aws ssm put-parameter \
 Without the parameter, monitors still email — holds are skipped with a note in
 the email.
 
+### Egress proxy (required for AWS scans)
+
+The edfringe API sits behind Cloudflare, which returns a 403 challenge to AWS
+datacenter IPs. Every Lambda→edfringe request therefore routes through a
+**residential proxy** (e.g. IPRoyal, pinned to Edinburgh/GB). The proxy URL is
+stored only in SSM and loaded into `FRINGE_PROXY_URL` at runtime:
+
+```bash
+AWS_PROFILE=hadar-pc aws ssm put-parameter \
+  --name /fringe-monitor/proxy-url \
+  --type SecureString \
+  --value 'http://USER:PASS@geo.iproyal.com:12321' \
+  --overwrite
+```
+
+The local CLI runs from a residential IP, so it leaves `FRINGE_PROXY_URL`
+unset and connects directly. Without the proxy parameter, the daily full scan
+and the 15-minute watchlist/monitor checks all fail with 403.
+
 ### API (`fringe-monitor-api`)
 
 HTTP API Gateway → Lambda.

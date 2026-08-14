@@ -44,6 +44,20 @@ variable "edfringe_creds_param" {
   default     = "/fringe-monitor/edfringe-credentials"
 }
 
+variable "fringe_proxy_param" {
+  description = <<-EOT
+    SSM SecureString parameter holding the residential proxy URL
+    (http://user:pass@host:port) used for edfringe API calls from Lambda —
+    the API's Cloudflare front 403s AWS datacenter IPs. Created manually
+    (never in TF state):
+    aws ssm put-parameter --name /fringe-monitor/proxy-url \
+      --type SecureString --value 'http://user:pass@geo.iproyal.com:12321'
+    When absent, Lambdas fall back to direct egress (which Cloudflare blocks).
+  EOT
+  type        = string
+  default     = "/fringe-monitor/proxy-url"
+}
+
 variable "daily_schedule" {
   description = "EventBridge schedule for full scan (UTC)"
   type        = string
