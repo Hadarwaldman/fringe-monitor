@@ -19,6 +19,7 @@
     scheduleFileName: "",
     bookings: [],
     userId: "hadar",
+    planner: null,
   };
 
   const COMMON_DEALS = [
@@ -388,12 +389,136 @@
   }
 
   function parsePlanDate(raw) {
-    // Examples: "Fri 14/08", "Sat 15/08"
+    // Examples: "2026-08-14" (synced), "Fri 14/08", "Sat 15/08" (uploads)
+    const iso = String(raw || "").match(/\d{4}-\d{2}-\d{2}/);
+    if (iso) return iso[0];
     const m = String(raw || "").match(/(\d{1,2})\/(\d{1,2})/);
     if (!m) return null;
     const day = m[1].padStart(2, "0");
     const month = m[2].padStart(2, "0");
     return `2026-${month}-${day}`;
+  }
+
+  // --- PlanMyFringe account sync (schedule + wishlist + scores) ---
+
+  function wishlistEntries() {
+    return (state.planner && state.planner.wishlist) || [];
+  }
+
+  function wishlistScoreFor(title) {
+    const key = normalizeTitle(title);
+    if (!key) return null;
+    const entry = wishlistEntries().find(
+      (w) =>
+        normalizeTitle(w.matched_show_title || w.title) === key ||
+        normalizeTitle(w.title) === key,
+    );
+    return entry && entry.score != null ? entry.score : null;
+  }
+
+  function scoreChip(title) {
+    const score = wishlistScoreFor(title);
+    if (score == null) return "";
+    return ` <span class="pill score" title="Your PlanMyFringe score">★ ${escapeHtml(score)}</span>`;
+  }
+
+  function plannerScheduleRows(planner) {
+    return (planner.schedule || []).map((e) => ({
+      Date: e.date,
+      Name: e.title,
+      Venue: e.venue || "",
+      Time: e.time || "",
+      __confirmed: !!e.confirmed,
+    }));
+  }
+
+  function adoptPlannerSchedule() {
+    if (!state.planner || !(state.planner.schedule || []).length) return;
+    state.scheduleRows = plannerScheduleRows(state.planner);
+    state.scheduleFileName = `PlanMyFringe sync (${(state.planner.synced_at || "").slice(0, 16)})`;
+    saveSchedule();
+  }
+
+  function renderWishlist() {
+    const table = $("wishlist-table");
+    if (!table) return;
+    const tbody = table.querySelector("tbody");
+    const entries = wishlistEntries();
+    if (!entries.length) {
+      table.hidden = true;
+      $("wishlist-summary").textContent = state.planner
+        ? "No wishlist entries in the last sync."
+        : "Not synced yet — use the Sync calendar button above.";
+      return;
+    }
+    const sorted = [...entries].sort((a, b) => (b.score || 0) - (a.score || 0));
+    tbody.innerHTML = sorted
+      .map((w) => {
+        const show = findShow(w.matched_show_title || w.title);
+        const sold = show ? (show.sold_out_dates || []).join(", ") || "—" : "—";
+        const avail = show ? (show.available_dates || []).join(", ") || "—" : "—";
+        const url = (show && show.url) || w.url || "";
+        return `<tr>
+          <td>${w.score != null ? `<span class="pill score">★ ${escapeHtml(w.score)}</span>` : "—"}</td>
+          <td><strong>${escapeHtml(w.title)}</strong>${show ? "" : ` <span class="pill unknown">no match</span>`}</td>
+          <td>${escapeHtml(w.venue || (show && show.venue) || "")}</td>
+          <td class="dates">${escapeHtml(sold)}</td>
+          <td class="dates">${escapeHtml(avail)}</td>
+          <td>${url ? `<a href="${escapeAttr(url)}" target="_blank" rel="noopener">Tickets</a>` : "—"}</td>
+        </tr>`;
+      })
+      .join("");
+    table.hidden = false;
+    $("wishlist-summary").textContent =
+      `${entries.length} wishlist shows · synced ${(state.planner.synced_at || "").slice(0, 16) || "?"}`;
+  }
+
+  async function loadPlanner() {
+    try {
+      const res = await fetch(`/data/planner.json?ts=${Date.now()}`, { cache: "no-store" });
+      if (!res.ok) return;
+      state.planner = await res.json();
+      if (!state.scheduleRows.length) adoptPlannerSchedule();
+      renderWishlist();
+      renderCompare();
+      renderShows();
+    } catch (_) {
+      /* no planner synced yet */
+    }
+  }
+
+  function setSyncStatus(message) {
+    const el = $("sync-status");
+    if (el) el.textContent = message || "";
+  }
+
+  async function syncPlanner() {
+    if (!apiBase) {
+      setSyncStatus("API URL missing — cannot sync.");
+      return;
+    }
+    const btn = $("sync-planner-btn");
+    if (btn) btn.disabled = true;
+    setSyncStatus("Syncing from PlanMyFringe…");
+    try {
+      const res = await fetch(`${apiBase}/planner/sync`, { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || res.statusText);
+      state.planner = data.planner || null;
+      adoptPlannerSchedule();
+      renderWishlist();
+      renderCompare();
+      renderShows();
+      const s = data.summary || {};
+      setSyncStatus(
+        `Synced: ${s.schedule_entries || 0} scheduled (${s.confirmed_booked || 0} already booked), ` +
+          `${s.watchlist_imported || 0} added to watchlist, ${s.wishlist_entries || 0} wishlist shows.`,
+      );
+    } catch (err) {
+      setSyncStatus(`Sync failed: ${err.message || err}`);
+    } finally {
+      if (btn) btn.disabled = false;
+    }
   }
 
   function inView(dateStr) {
@@ -430,6 +555,65 @@
       }) ||
       null
     );
+  }
+
+  function openMonitorDialog(show, presetDate) {
+    if (!show) return;
+    const win = readDateWindow(state.userId);
+    $("quick-monitor-slug").value = show.slug || "";
+    $("quick-monitor-title").value = show.show_title || "";
+    $("quick-monitor-url").value = show.url || "";
+    $("monitor-dialog-show").textContent = show.show_title || "";
+    // Default range: the scheduled/selected day (if any) → the view window end.
+    $("quick-monitor-start").value = presetDate || $("view-start").value || win.start_date;
+    $("quick-monitor-end").value =
+      $("view-end").value || win.end_date || presetDate || win.start_date;
+    $("quick-monitor-qty").value = 2;
+    $("quick-monitor-hold").checked = false;
+    $("quick-monitor-status").textContent = "";
+    $("monitor-dialog").showModal();
+  }
+
+  async function saveQuickMonitor() {
+    const status = $("quick-monitor-status");
+    const slug = $("quick-monitor-slug").value;
+    const start = $("quick-monitor-start").value;
+    const end = $("quick-monitor-end").value;
+    if (!slug) {
+      status.textContent = "This show isn’t in the latest scan yet.";
+      return false;
+    }
+    if (!start || !end || end < start) {
+      status.textContent = "Enter a valid date range.";
+      return false;
+    }
+    if (!apiBase) {
+      status.textContent = "API URL missing — cannot create a monitor.";
+      return false;
+    }
+    status.textContent = "Creating…";
+    try {
+      const res = await fetch(`${apiBase}/monitors`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          slug,
+          show_title: $("quick-monitor-title").value,
+          url: $("quick-monitor-url").value,
+          start_date: start,
+          end_date: end,
+          quantity: Number($("quick-monitor-qty").value || 1),
+          hold_tickets: $("quick-monitor-hold").checked,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || res.statusText);
+      status.textContent = "Monitoring started. See the Ticket monitors page.";
+      return true;
+    } catch (err) {
+      status.textContent = `Could not create monitor: ${err.message || err}`;
+      return false;
+    }
   }
 
   function statusForDay(show, dateStr) {
@@ -996,7 +1180,7 @@
           ? ` <span class="pill booked" title="Already in ${escapeAttr(currentUser().name)}'s booked list">booked</span>`
           : "";
         return `<tr>
-          <td><strong>${escapeHtml(show.show_title)}</strong>${bookedBadge}<div class="dates">${escapeHtml(show.genre || "")}</div></td>
+          <td><strong>${escapeHtml(show.show_title)}</strong>${bookedBadge}${scoreChip(show.show_title)}<div class="dates">${escapeHtml(show.genre || "")}</div></td>
           <td>${escapeHtml(show.venue || "")}</td>
           <td class="remaining">${remainingByDayHtml(show)}</td>
           <td class="deals">${dealsByDayHtml(show)}</td>
@@ -1005,7 +1189,10 @@
           <td class="dates">${escapeHtml(nearly)}</td>
           <td class="dates">${escapeHtml(avail)}</td>
           <td>${show.url ? `<a href="${escapeAttr(show.url)}" target="_blank" rel="noopener">Tickets</a>` : ""}</td>
-          <td><button type="button" class="btn-link" data-book-show="${escapeAttr(show.slug || show.show_title)}">Book</button></td>
+          <td><div class="btn-row">
+            <button type="button" class="btn-link" data-book-show="${escapeAttr(show.slug || show.show_title)}">Book</button>
+            <button type="button" class="btn-link" data-monitor-show="${escapeAttr(show.slug || show.show_title)}">Monitor</button>
+          </div></td>
         </tr>`;
       })
       .join("");
@@ -1230,12 +1417,13 @@
         const nearlyDays = show ? (show.nearly_sold_out_dates || []).join(", ") || "—" : "—";
         const availDays = show ? (show.available_dates || []).join(", ") || "—" : "—";
         const rem = remainingForDay(show, date);
-        const bookedForDay = show
-          ? bookingsForShow(show).some((b) => b.date === date)
-          : false;
+        const bookedForDay =
+          !!row.__confirmed ||
+          (show ? bookingsForShow(show).some((b) => b.date === date) : false);
+        const bookedTip = row.__confirmed ? ` title="Confirmed on PlanMyFringe — tickets already booked"` : "";
         return `<tr>
           <td>${escapeHtml(row.Date || date || "")}</td>
-          <td><strong>${escapeHtml(row.Name || "")}</strong>${bookedForDay ? ` <span class="pill booked">booked</span>` : ""}<div class="dates">${escapeHtml(row.Venue || "")}</div></td>
+          <td><strong>${escapeHtml(row.Name || "")}</strong>${bookedForDay ? ` <span class="pill booked"${bookedTip}>booked</span>` : ""}${scoreChip(row.Name)}<div class="dates">${escapeHtml(row.Venue || "")}</div></td>
           <td>${pill(status)}</td>
           <td class="remaining"><span class="rem ${status}">${escapeHtml(rem)}</span></td>
           <td class="deals">${dealsForDayHtml(show, date)}</td>
@@ -1243,7 +1431,10 @@
           <td class="dates">${escapeHtml(nearlyDays)}</td>
           <td class="dates">${escapeHtml(availDays)}</td>
           <td>${show?.url ? `<a href="${escapeAttr(show.url)}" target="_blank" rel="noopener">Tickets</a>` : "—"}</td>
-          <td><button type="button" class="btn-link" data-book-schedule="${escapeAttr(row.Name || "")}" data-book-date="${escapeAttr(date || "")}">Book</button></td>
+          <td><div class="btn-row">
+            <button type="button" class="btn-link" data-book-schedule="${escapeAttr(row.Name || "")}" data-book-date="${escapeAttr(date || "")}">Book</button>
+            <button type="button" class="btn-link" data-monitor-schedule="${escapeAttr(row.Name || "")}" data-monitor-date="${escapeAttr(date || "")}">Monitor</button>
+          </div></td>
         </tr>`;
       })
       .join("");
@@ -1292,6 +1483,8 @@
       if (btn) btn.disabled = false;
     }
   }
+
+  $("sync-planner-btn").addEventListener("click", syncPlanner);
 
   $("run-scan-btn").addEventListener("click", () => {
     resetScanConfirm();
@@ -1401,6 +1594,16 @@
     }
   });
 
+  $("quick-monitor-form").addEventListener("submit", (event) => {
+    const submitter = event.submitter;
+    if (submitter && submitter.value === "cancel") return;
+    // Keep the dialog open until the async POST resolves, then close it.
+    event.preventDefault();
+    saveQuickMonitor().then((ok) => {
+      if (ok) setTimeout(() => $("monitor-dialog").close(), 700);
+    });
+  });
+
   document.addEventListener("click", (event) => {
     const target = event.target;
     if (!(target instanceof Element)) return;
@@ -1430,6 +1633,25 @@
         date,
         deals: date ? offersForShowDay(show, date) : [],
       });
+      return;
+    }
+
+    const monitorShow = target.closest("[data-monitor-show]");
+    if (monitorShow) {
+      const key = monitorShow.getAttribute("data-monitor-show");
+      const show =
+        state.shows.find((s) => s.slug === key) ||
+        state.shows.find((s) => s.show_title === key) ||
+        findShow(key);
+      openMonitorDialog(show, "");
+      return;
+    }
+
+    const monitorSchedule = target.closest("[data-monitor-schedule]");
+    if (monitorSchedule) {
+      const name = monitorSchedule.getAttribute("data-monitor-schedule") || "";
+      const date = monitorSchedule.getAttribute("data-monitor-date") || "";
+      openMonitorDialog(findShow(name), date);
       return;
     }
 
@@ -1469,7 +1691,9 @@
   loadSavedBookings();
   updateUserUi();
   renderBooked();
-  Promise.all([loadConfig(), loadLatest()]).catch((err) => {
-    $("meta").textContent = `Failed to load data: ${err.message || err}`;
-  });
+  Promise.all([loadConfig(), loadLatest()])
+    .then(() => loadPlanner())
+    .catch((err) => {
+      $("meta").textContent = `Failed to load data: ${err.message || err}`;
+    });
 })();
