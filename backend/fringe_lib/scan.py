@@ -132,8 +132,17 @@ def collect_window_rows(
         for perf in event.get("performances") or []:
             if perf.get("cancelled"):
                 continue
-            dt = parse_iso(perf["dateTime"])
-            day = local_day(dt)
+            # Some feed rows carry a placeholder dateTime (e.g. 0001-01-01),
+            # which overflows tz conversion. Skip anything unparseable rather
+            # than aborting the whole scan.
+            raw_dt = perf.get("dateTime")
+            if not raw_dt:
+                continue
+            try:
+                dt = parse_iso(raw_dt)
+                day = local_day(dt)
+            except (ValueError, OverflowError, OSError):
+                continue
             if day not in allowed:
                 continue
 
