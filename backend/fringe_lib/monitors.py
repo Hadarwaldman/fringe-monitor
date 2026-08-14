@@ -36,7 +36,26 @@ def new_monitor(
     quantity: int = 1,
     hold_tickets: bool = False,
     url: str = "",
+    performances: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
+    # `performances` seeds box-office IDs (from the frontend's scan data) so the
+    # very first check can use the cheap direct-lookup path. Empty is fine —
+    # the first run then falls back to a programme fetch and self-seeds.
+    seeded: list[dict[str, Any]] = []
+    for perf in performances or []:
+        pid = perf.get("performance_id")
+        if pid is None:
+            continue
+        if not (start_date <= (perf.get("date") or "") <= end_date):
+            continue
+        seeded.append(
+            {
+                "performance_id": int(pid),
+                "box_office_id": perf.get("box_office_id") or "",
+                "date": perf.get("date") or "",
+                "time": perf.get("time") or "",
+            }
+        )
     return {
         "monitor_id": uuid.uuid4().hex[:12],
         "slug": slug,
@@ -51,6 +70,7 @@ def new_monitor(
         "alerted": {},
         "holds_json": "{}",
         "last_result": [],
+        "performances": seeded,
     }
 
 
@@ -99,21 +119,93 @@ def evaluate_monitor(
     return {"statuses": statuses, "openings": openings, "alerted": alerted}
 
 
+async def rows_from_programme(
+    api, events, monitors, *, nearly: int
+) -> list[PerformanceRow]:
+    """Build classified rows for all monitored shows from a full programme
+    snapshot (heavy path — used when a monitor has no seeded performances)."""
+    from .scan import collect_window_rows, enrich_with_prices
+
+    slug_set = {m["slug"] for m in monitors if m.get("slug")}
+    if not slug_set:
+        return []
+    starts = [m["start_date"] for m in monitors]
+    ends = [m["end_date"] for m in monitors]
+    rows = collect_window_rows(
+        events,
+        date.fromisoformat(min(starts)),
+        date.fromisoformat(max(ends)),
+        slugs=slug_set,
+    )
+    print(f"Monitors: classifying {len(rows)} performances (programme)…", flush=True)
+    return await enrich_with_prices(api, rows, concurrency=20, nearly_threshold=nearly)
+
+
+async def rows_from_box_office_ids(
+    api, monitor: dict[str, Any], *, nearly: int
+) -> list[PerformanceRow]:
+    """Cheap path: build rows for one monitor by directly querying
+    performancePrices for each stored performance's box_office_id — no
+    programme fetch. Returns [] if the monitor has no seeded performances,
+    so the caller can fall back to the programme path."""
+    from .scan import PRICES_QUERY, classify_availability
+
+    seeded = monitor.get("performances") or []
+    rows: list[PerformanceRow] = []
+    for perf in seeded:
+        box_id = perf.get("box_office_id")
+        row = PerformanceRow(
+            show_title=monitor.get("show_title") or "",
+            slug=monitor.get("slug") or "",
+            genre="",
+            venue="",
+            performance_id=int(perf["performance_id"]),
+            performance_title="",
+            date_local=perf.get("date") or "",
+            time_local=perf.get("time") or "",
+            datetime_utc="",
+            ticket_status="",
+            sold_out_flag=False,
+            box_office_id=box_id,
+        )
+        if not box_id:
+            row.availability = "available"
+            rows.append(row)
+            continue
+        try:
+            data = await api.graphql(PRICES_QUERY, {"performanceId": box_id})
+            result = (data["performancePrices"].get("result") or {})
+            row.percent_remaining = result.get("performancePercentageRemaining")
+            row.availability_level = result.get("performanceAvailabilityLevel")
+            row.availability = classify_availability(
+                sold_out=False,
+                ticket_status="",
+                percent_remaining=row.percent_remaining,
+                availability_level=row.availability_level,
+                nearly_threshold=nearly,
+            )
+        except Exception as exc:  # noqa: BLE001
+            print(f"  warn: price lookup failed for {box_id}: {exc}", flush=True)
+            row.availability = "available"
+        rows.append(row)
+    return sorted(rows, key=lambda r: (r.date_local, r.time_local))
+
+
 async def run_monitor_checks(
     api,
     http,
-    events: list[dict[str, Any]],
+    events: list[dict[str, Any]] | None,
     config: dict[str, Any],
     monitors: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    """Check every active monitor against a fresh programme snapshot.
+    """Check every active monitor.
 
-    `events` is the raw programme (from fetch_all_programme) so the 15-minute
-    lambda only fetches it once for watchlist + monitors combined.
+    Per monitor, prefer the cheap direct box-office-id lookups (no programme
+    fetch). When a monitor has no seeded performances, fall back to the
+    programme snapshot in `events` (fetched by the caller only if needed).
     """
     from .aws_util import env, patch_monitor, send_monitor_email
     from .cart import get_fringe_credentials, hold_tickets
-    from .scan import collect_window_rows, enrich_with_prices
 
     nearly = int(config.get("nearly_threshold") or 20)
     notify_email = config["notify_email"]
@@ -124,23 +216,8 @@ async def run_monitor_checks(
     emailed = 0
     holds_attempted = 0
 
-    # One price-enrich pass across all monitors (dedup by performance).
-    slug_set = {m["slug"] for m in monitors if m.get("slug")}
-    all_rows: list[PerformanceRow] = []
-    if slug_set:
-        starts = [m["start_date"] for m in monitors]
-        ends = [m["end_date"] for m in monitors]
-        rows = collect_window_rows(
-            events,
-            date.fromisoformat(min(starts)),
-            date.fromisoformat(max(ends)),
-            slugs=slug_set,
-        )
-        print(f"Monitors: classifying {len(rows)} performances…", flush=True)
-        all_rows = await enrich_with_prices(
-            api, rows, concurrency=20, nearly_threshold=nearly
-        )
-
+    # Programme rows are built lazily, only if some monitor lacks seeds.
+    programme_rows: list[PerformanceRow] | None = None
     credentials = None
     creds_checked = False
 
@@ -154,7 +231,34 @@ async def run_monitor_checks(
             )
             continue
 
-        rows = monitor_rows(monitor, all_rows)
+        rows = await rows_from_box_office_ids(api, monitor, nearly=nearly)
+        if not rows:
+            # No seeds — fall back to the programme snapshot (fetch once).
+            if programme_rows is None:
+                if events is None:
+                    from .scan import fetch_all_programme
+
+                    events = await fetch_all_programme(api, page_size=500)
+                programme_rows = await rows_from_programme(
+                    api, events, monitors, nearly=nearly
+                )
+            rows = monitor_rows(monitor, programme_rows)
+            # Seed box-office IDs so future checks use the cheap path.
+            if rows:
+                patch_monitor(
+                    monitor["monitor_id"],
+                    {
+                        "performances": [
+                            {
+                                "performance_id": r.performance_id,
+                                "box_office_id": r.box_office_id or "",
+                                "date": r.date_local,
+                                "time": r.time_local,
+                            }
+                            for r in rows
+                        ]
+                    },
+                )
         outcome = evaluate_monitor(monitor, rows)
         checked += 1
 

@@ -60,6 +60,27 @@ resource "aws_lambda_function" "watchlist" {
   ]
 }
 
+resource "aws_lambda_function" "monitor_check" {
+  function_name    = "${local.name}-monitor-check"
+  role             = aws_iam_role.lambda.arn
+  handler          = "monitor_check.handler"
+  runtime          = "python3.12"
+  filename         = local.lambda_zip_path
+  source_code_hash = local.lambda_hash
+
+  timeout     = 300
+  memory_size = 512
+
+  environment {
+    variables = local.lambda_env
+  }
+
+  depends_on = [
+    aws_iam_role_policy.lambda_app,
+    aws_iam_role_policy_attachment.lambda_basic,
+  ]
+}
+
 resource "aws_lambda_function" "api" {
   function_name    = "${local.name}-api"
   role             = aws_iam_role.lambda.arn
@@ -73,8 +94,9 @@ resource "aws_lambda_function" "api" {
 
   environment {
     variables = merge(local.lambda_env, {
-      FULL_SCAN_FUNCTION_NAME = aws_lambda_function.full_scan.function_name
-      WATCHLIST_FUNCTION_NAME = aws_lambda_function.watchlist.function_name
+      FULL_SCAN_FUNCTION_NAME     = aws_lambda_function.full_scan.function_name
+      WATCHLIST_FUNCTION_NAME     = aws_lambda_function.watchlist.function_name
+      MONITOR_CHECK_FUNCTION_NAME = aws_lambda_function.monitor_check.function_name
     })
   }
 
@@ -91,6 +113,11 @@ resource "aws_cloudwatch_log_group" "full_scan" {
 
 resource "aws_cloudwatch_log_group" "watchlist" {
   name              = "/aws/lambda/${aws_lambda_function.watchlist.function_name}"
+  retention_in_days = 14
+}
+
+resource "aws_cloudwatch_log_group" "monitor_check" {
+  name              = "/aws/lambda/${aws_lambda_function.monitor_check.function_name}"
   retention_in_days = 14
 }
 

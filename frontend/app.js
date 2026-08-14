@@ -936,6 +936,17 @@
       return false;
     }
     status.textContent = "Creating…";
+    const show = state.shows.find((s) => s.slug === slug) || findShow(slug);
+    const performances = show
+      ? (show.performances || [])
+          .filter((p) => p.date >= start && p.date <= end)
+          .map((p) => ({
+            performance_id: p.performance_id,
+            box_office_id: p.box_office_id || "",
+            date: p.date,
+            time: p.time,
+          }))
+      : [];
     try {
       const res = await fetch(`${apiBase}/monitors`, {
         method: "POST",
@@ -948,6 +959,7 @@
           end_date: end,
           quantity: Number($("quick-monitor-qty").value || 1),
           hold_tickets: $("quick-monitor-hold").checked,
+          performances,
         }),
       });
       const data = await res.json().catch(() => ({}));

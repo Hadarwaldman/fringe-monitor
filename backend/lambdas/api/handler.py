@@ -131,21 +131,26 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                 quantity=int(body.get("quantity") or 1),
                 hold_tickets=bool(body.get("hold_tickets")),
                 url=str(body.get("url") or ""),
+                performances=body.get("performances") or [],
             )
             put_monitor(monitor)
             return _response(200, {"monitor": monitor})
 
         if path.endswith("/monitors/check") and method == "POST":
-            fn = os.environ.get("WATCHLIST_FUNCTION_NAME")
+            # Prefer the lightweight monitor-check function; fall back to the
+            # watchlist function if it's not configured.
+            fn = os.environ.get("MONITOR_CHECK_FUNCTION_NAME") or os.environ.get(
+                "WATCHLIST_FUNCTION_NAME"
+            )
             if not fn:
-                return _response(500, {"error": "WATCHLIST_FUNCTION_NAME not configured"})
+                return _response(500, {"error": "monitor-check function not configured"})
             boto3.client("lambda").invoke(FunctionName=fn, InvocationType="Event")
             return _response(
                 202,
                 {
                     "ok": True,
                     "started": True,
-                    "message": "Check started — refresh in ~1–2 minutes for results.",
+                    "message": "Check started — refresh in ~1 minute for results.",
                 },
             )
 

@@ -199,6 +199,17 @@
     table.hidden = false;
   }
 
+  function performancesInRange(show, start, end) {
+    return (show.performances || [])
+      .filter((p) => p.date >= start && p.date <= end)
+      .map((p) => ({
+        performance_id: p.performance_id,
+        box_office_id: p.box_office_id || "",
+        date: p.date,
+        time: p.time,
+      }));
+  }
+
   $("monitor-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const status = $("monitor-form-status");
@@ -226,6 +237,7 @@
           end_date: end,
           quantity: Number($("monitor-qty").value || 1),
           hold_tickets: $("monitor-hold").checked,
+          performances: performancesInRange(show, start, end),
         }),
       });
       status.textContent = `Monitoring ${show.show_title}. First check within 15 minutes — use “Check now” to run one immediately.`;

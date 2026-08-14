@@ -37,3 +37,23 @@ resource "aws_lambda_permission" "watchlist" {
   principal     = "events.amazonaws.com"
   source_arn    = aws_cloudwatch_event_rule.watchlist.arn
 }
+
+resource "aws_cloudwatch_event_rule" "monitor_check" {
+  name                = "${local.name}-monitor-check"
+  description         = "Lightweight show-monitor check (cheap, frequent)"
+  schedule_expression = var.monitor_schedule
+}
+
+resource "aws_cloudwatch_event_target" "monitor_check" {
+  rule      = aws_cloudwatch_event_rule.monitor_check.name
+  target_id = "monitor-check"
+  arn       = aws_lambda_function.monitor_check.arn
+}
+
+resource "aws_lambda_permission" "monitor_check" {
+  statement_id  = "AllowEventBridgeMonitorCheck"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.monitor_check.function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.monitor_check.arn
+}
