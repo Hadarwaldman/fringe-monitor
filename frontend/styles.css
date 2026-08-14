@@ -651,3 +651,43 @@ a {
     width: 100%;
   }
 }
+
+/* Ticket monitors page */
+.back-link {
+  align-self: center;
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: none;
+  border: 1px solid var(--line);
+  background: rgba(255, 252, 246, 0.85);
+  padding: 0.45rem 0.9rem;
+}
+
+.back-link:hover {
+  background: rgba(15, 106, 90, 0.06);
+}
+
+.creds-banner {
+  border: 1px solid var(--warn);
+  background: #f3e2c8;
+  color: var(--warn);
+  padding: 0.7rem 0.9rem;
+  margin-bottom: 1.25rem;
+  font-size: 0.95rem;
+}
+
+.monitor-show-label {
+  min-width: 18rem;
+  flex: 1 1 18rem;
+}
+
+.hold-check {
+  flex-direction: row !important;
+  align-items: center;
+  gap: 0.45rem;
+  font-weight: 600;
+}
+
+.monitor-paused {
+  opacity: 0.55;
+}

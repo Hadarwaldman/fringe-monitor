@@ -17,13 +17,15 @@ backend/
     models.py           PerformanceRow dataclass
     edfest_offers.py    Fetch EdFest/2-for-1 offers, attach to performances
     trend.py            Rolling sell-through history / 7-day sold % averages
-    aws_util.py         boto3 helpers: DynamoDB config/watchlist, S3 writes (Lambda-only)
+    monitors.py         Show monitors: per-show/date-range availability alerts (+optional hold)
+    cart.py             edfringe login + add-to-basket ("hold tickets"); creds from SSM SecureString
+    aws_util.py         boto3 helpers: DynamoDB config/watchlist/monitors, S3 writes (Lambda-only)
   lambdas/
     full_scan/handler.py  Daily job (EventBridge cron 06:00 UTC)
-    watchlist/handler.py  15-min job (EventBridge rate), sends SES reopen emails
-    api/handler.py        HTTP API Gateway backend (/config, /watchlist, /health)
+    watchlist/handler.py  15-min job (EventBridge rate): watchlist reopen emails + show monitors
+    api/handler.py        HTTP API Gateway backend (/config, /watchlist, /monitors, /health)
   requirements.txt      Lambda runtime deps (httpx)
-frontend/               Static CloudFront site (index.html, app.js, styles.css, config.js)
+frontend/               Static CloudFront site (index.html/app.js dashboard, monitors.html/monitors.js)
 terraform/              All AWS infra; remote S3 state
 scripts/
   package_lambda.sh     Builds build/lambda.zip
@@ -78,7 +80,8 @@ cd terraform && AWS_PROFILE=hadar-pc terraform output
 ## Data flow
 
 - Full scan writes `s3://<data-bucket>/data/latest.json` (frontend source of truth), `data/config.json`, and a CSV.
-- Config + watchlist live in DynamoDB table `fringe-monitor` (single-table: `CONFIG/MAIN`, `WATCHLIST/<perf_id>`, `ALERT/<perf_id>`).
+- Config + watchlist + monitors live in DynamoDB table `fringe-monitor` (single-table: `CONFIG/MAIN`, `WATCHLIST/<perf_id>`, `ALERT/<perf_id>`, `MONITOR/<monitor_id>`).
+- Show monitors (monitors.html): one show + date range; the 15-min lambda emails when any performance in range becomes buyable, and (if `hold_tickets`) logs into the user's edfringe account and adds tickets to the basket (~30-min hold). edfringe credentials live ONLY in the SSM SecureString `/fringe-monitor/edfringe-credentials` (JSON `{"email","password"}`), created manually via `aws ssm put-parameter` — never commit them, never put them in Terraform/DynamoDB. Holds are skipped gracefully when the parameter is absent. Hold policy: one hold per monitor per opening (earliest newly-opened performance only) — never re-add on every check.
 - The date window is stored in DynamoDB config; change it via the UI (**Save dates**) or `PUT /config` — takes effect on the next scan.
 
 ## Common ops

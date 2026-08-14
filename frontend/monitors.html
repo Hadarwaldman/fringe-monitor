@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Fringe Monitor — Ticket monitors</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700;1,9..40,400&family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+    <script src="./config.js"></script>
+  </head>
+  <body>
+    <div class="page">
+      <header class="hero">
+        <div class="hero-top">
+          <p class="brand">Ticket monitors</p>
+          <a class="back-link" href="./index.html">← Dashboard</a>
+        </div>
+        <h1>Watch a show, get emailed the moment tickets appear</h1>
+        <p class="lede">
+          Pick a show and a date range. Every 15 minutes the monitor re-checks live
+          availability and emails you when any performance in the range opens up.
+          Optionally it can also hold tickets in your edfringe basket — you then have
+          ~30 minutes to log in and complete the purchase.
+        </p>
+        <div class="meta" id="monitor-meta">Loading monitors…</div>
+      </header>
+
+      <div id="creds-banner" class="creds-banner" hidden>
+        ⚠️ Ticket holds are enabled on a monitor, but edfringe credentials are not
+        configured on the server — alerts will still be emailed, holds will be
+        skipped. See the README for the one-time <code>aws ssm put-parameter</code> setup.
+      </div>
+
+      <section class="panel" aria-labelledby="add-monitor-heading">
+        <div class="panel-head">
+          <h2 id="add-monitor-heading">Add a monitor</h2>
+          <p>
+            Shows come from the latest scan. The date range can be anything in the
+            festival — it does not need to match your dashboard window.
+          </p>
+        </div>
+        <form id="monitor-form" class="config-form">
+          <label class="monitor-show-label">
+            Show
+            <input
+              type="text"
+              id="monitor-show"
+              list="monitor-show-list"
+              placeholder="Start typing a show title…"
+              autocomplete="off"
+              required
+            />
+            <datalist id="monitor-show-list"></datalist>
+          </label>
+          <label>
+            From
+            <input type="date" id="monitor-start" required />
+          </label>
+          <label>
+            To
+            <input type="date" id="monitor-end" required />
+          </label>
+          <label>
+            Tickets
+            <input type="number" id="monitor-qty" min="1" max="6" value="2" />
+          </label>
+          <label class="hold-check">
+            <input type="checkbox" id="monitor-hold" />
+            Hold tickets in basket when they open
+          </label>
+          <button type="submit">Start monitoring</button>
+          <span id="monitor-form-status" class="status" role="status"></span>
+        </form>
+      </section>
+
+      <section class="panel" aria-labelledby="monitors-heading">
+        <div class="panel-head">
+          <div class="panel-head-row">
+            <div>
+              <h2 id="monitors-heading">Your monitors</h2>
+              <p>
+                Status refreshes on each 15-minute check. “Check now” runs one
+                immediately (~1–2 minutes).
+              </p>
+            </div>
+            <button type="button" id="check-now-btn" class="btn-secondary">Check now</button>
+          </div>
+        </div>
+        <div id="monitors-status" class="status"></div>
+        <div class="table-wrap">
+          <table id="monitors-table" hidden>
+            <thead>
+              <tr>
+                <th>Show</th>
+                <th>Date range</th>
+                <th>Qty</th>
+                <th>Hold</th>
+                <th>Availability</th>
+                <th>Last check</th>
+                <th>Last alert / hold</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+    <script src="./monitors.js"></script>
+  </body>
+</html>

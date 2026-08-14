@@ -11,12 +11,14 @@ from fringe_lib.aws_util import (
     env,
     get_alert_state,
     get_config,
+    list_monitors,
     list_watchlist,
     put_alert_state,
     send_reopen_email,
     upsert_watch_items,
 )
 from fringe_lib.client import FringeClient
+from fringe_lib.monitors import run_monitor_checks
 from fringe_lib.scan import (
     collect_window_rows,
     enrich_with_prices,
@@ -33,9 +35,10 @@ async def run_watchlist_check() -> dict[str, Any]:
     from_email = env("FROM_EMAIL", notify_email)
 
     watched = list_watchlist()
-    if not watched:
-        print("Watchlist empty; nothing to check", flush=True)
-        return {"ok": True, "checked": 0, "openings": 0}
+    monitors = [m for m in list_monitors() if m.get("active", True)]
+    if not watched and not monitors:
+        print("Watchlist and monitors empty; nothing to check", flush=True)
+        return {"ok": True, "checked": 0, "openings": 0, "monitors_checked": 0}
 
     slug_set = {w["slug"] for w in watched if w.get("slug")}
     watched_ids = {int(w["performance_id"]) for w in watched if w.get("performance_id") is not None}
@@ -47,15 +50,17 @@ async def run_watchlist_check() -> dict[str, Any]:
 
     print(
         f"Watchlist check: {len(watched)} items / {len(slug_set)} shows; "
-        f"window {start} → {end}",
+        f"{len(monitors)} active monitor(s); window {start} → {end}",
         flush=True,
     )
 
+    monitor_result: dict[str, Any] = {"monitors_checked": 0}
     limits = httpx.Limits(max_connections=30, max_keepalive_connections=20)
     async with httpx.AsyncClient(timeout=60.0, limits=limits) as client:
         api = FringeClient(client)
         await api.authenticate()
-        # Listing-only programme fetch, then price-enrich just watched slugs.
+        # Listing-only programme fetch (shared by watchlist + monitors), then
+        # price-enrich just the slugs we care about.
         events = await fetch_all_programme(api, page_size=500)
         rows = collect_window_rows(events, start, end, slugs=slug_set)
         rows = [r for r in rows if r.performance_id in watched_ids]
@@ -66,6 +71,10 @@ async def run_watchlist_check() -> dict[str, Any]:
             concurrency=20,
             nearly_threshold=nearly,
         )
+        if monitors:
+            monitor_result = await run_monitor_checks(
+                api, client, events, config, monitors
+            )
 
     openings: list[dict[str, Any]] = []
     updates: list[dict[str, Any]] = []
@@ -143,6 +152,7 @@ async def run_watchlist_check() -> dict[str, Any]:
         "checked": len(classified),
         "openings": len(openings),
         "emailed": bool(openings),
+        **monitor_result,
     }
     print(json.dumps(result), flush=True)
     return result

@@ -80,6 +80,35 @@ First production scan (12–20 Aug window): ~3007 shows, ~19.5k performances cla
 - Loads watchlist from DynamoDB
 - Re-fetches programme listing, re-classifies **only watched performances**
 - If status moves `sold_out`/`nearly_sold_out` → `available`, sends SES email to `notify_email` and records alert state so you are not spammed every cycle
+- Also runs **show monitors** (see below) against the same programme snapshot
+
+### Show monitors (+ optional basket hold)
+
+A monitor targets **one show over a date range** (created on `monitors.html`).
+Every 15 minutes the watchlist lambda re-classifies that show's performances in
+the range and, when any becomes buyable (`available` or `nearly_sold_out`),
+emails `notify_email`. Each performance alerts once per transition into
+buyable; the flag resets if it sells out again.
+
+If the monitor has **hold tickets** enabled, the lambda logs into your
+edfringe account and adds the configured quantity of full-price tickets for
+the earliest newly-opened performance to your basket. edfringe holds basket
+items for ~30 minutes — the alert email tells you to log in and complete the
+purchase before it expires. Only one performance is held per opening, and a
+hold is never re-attempted on subsequent checks (no inventory hoarding).
+
+One-time setup for holds (credentials stay only in SSM, never in the repo,
+Terraform state, or DynamoDB):
+
+```bash
+AWS_PROFILE=hadar-pc aws ssm put-parameter \
+  --name /fringe-monitor/edfringe-credentials \
+  --type SecureString \
+  --value '{"email":"you@example.com","password":"..."}'
+```
+
+Without the parameter, monitors still email — holds are skipped with a note in
+the email.
 
 ### API (`fringe-monitor-api`)
 
@@ -92,6 +121,11 @@ HTTP API Gateway → Lambda.
 | `PUT` | `/config` | Update `start_date`, `end_date`, `nearly_threshold`, etc. |
 | `GET` | `/watchlist` | List watched performances |
 | `PUT`/`POST` | `/watchlist` | Upsert watch items (`source: manual` by default) |
+| `GET` | `/monitors` | List show monitors (+ whether hold credentials are configured) |
+| `POST` | `/monitors` | Create a monitor (`slug`, `show_title`, `start_date`, `end_date`, `quantity`, `hold_tickets`) |
+| `PUT` | `/monitors/{id}` | Update dates/quantity/`hold_tickets`/`active` |
+| `DELETE` | `/monitors/{id}` | Remove a monitor |
+| `POST` | `/monitors/check` | Run the 15-minute check immediately (async) |
 
 CORS is open (`*`) so the CloudFront site can call it.
 
@@ -100,6 +134,7 @@ CORS is open (`*`) so the CloudFront site can call it.
 Static files in S3, served by CloudFront:
 
 - `/` — UI (`index.html`, `app.js`, `styles.css`)
+- `/monitors.html` — show monitors page (`monitors.js`)
 - `/data/latest.json` — scan results (OAC from data bucket)
 - `/data/config.json` — config mirror
 - `config.js` — injects `apiUrl` at deploy time
@@ -129,6 +164,7 @@ Table: `fringe-monitor` (pay-per-request), keys `pk` + `sk`.
 | `CONFIG` | `MAIN` | `start_date`, `end_date`, `nearly_threshold`, `notify_email`, `auto_watch_sold_out` |
 | `WATCHLIST` | `{performance_id}` | Show/perf metadata + last known `availability` + `source` (`auto`/`manual`) |
 | `ALERT` | `{performance_id}` | Dedupe for reopen emails |
+| `MONITOR` | `{monitor_id}` | Show monitor: slug, date range, quantity, `hold_tickets`, alert memory, hold results |
 
 ---
 
