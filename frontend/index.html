@@ -26,8 +26,12 @@
         </div>
         <h1>Sold-out days, reopen alerts, schedule compare</h1>
         <p class="lede">
-          Live Edinburgh Fringe availability for your date window. Switch user, then upload a PlanMyFringe CSV or PDF to see which of your picks are sold out.
+          Live Edinburgh Fringe availability for your date window. Sync your PlanMyFringe account to pull your schedule and wishlist, or upload a CSV/PDF export manually.
         </p>
+        <div class="hero-actions">
+          <button type="button" id="sync-planner-btn" class="sync-btn">⟳ Sync calendar</button>
+          <span id="sync-status" class="status" role="status"></span>
+        </div>
         <div class="meta" id="meta">Loading latest scan…</div>
       </header>
 
@@ -107,6 +111,29 @@
         </div>
       </section>
 
+      <section class="panel" aria-labelledby="wishlist-heading">
+        <div class="panel-head">
+          <h2 id="wishlist-heading">Wishlist</h2>
+          <p id="wishlist-lede">Synced from PlanMyFringe. Your scores also appear next to matching shows in the schedule and All shows tables.</p>
+        </div>
+        <div id="wishlist-summary" class="status"></div>
+        <div class="table-wrap">
+          <table id="wishlist-table" hidden>
+            <thead>
+              <tr>
+                <th>Score</th>
+                <th>Show</th>
+                <th>Venue</th>
+                <th>Sold out</th>
+                <th>Available</th>
+                <th>Link</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
       <section class="panel" aria-labelledby="booked-heading">
         <div class="panel-head">
           <div class="panel-head-row">
@@ -133,6 +160,41 @@
           </table>
         </div>
       </section>
+
+      <dialog id="monitor-dialog" class="confirm-dialog booking-dialog">
+        <form method="dialog" id="quick-monitor-form" class="confirm-dialog-form">
+          <h3 id="monitor-dialog-title">Monitor a show</h3>
+          <p class="field-hint" id="monitor-dialog-show"></p>
+          <input type="hidden" id="quick-monitor-slug" value="" />
+          <input type="hidden" id="quick-monitor-title" value="" />
+          <input type="hidden" id="quick-monitor-url" value="" />
+          <label>
+            From
+            <input type="date" id="quick-monitor-start" required />
+          </label>
+          <label>
+            To
+            <input type="date" id="quick-monitor-end" required />
+          </label>
+          <label>
+            Tickets
+            <input type="number" id="quick-monitor-qty" min="1" max="6" value="2" />
+          </label>
+          <label class="hold-check">
+            <input type="checkbox" id="quick-monitor-hold" />
+            Hold tickets in basket when they open
+          </label>
+          <p class="field-hint">
+            You’ll get an email when any performance in this range becomes buyable.
+            Manage monitors on the <a href="./monitors.html">Ticket monitors</a> page.
+          </p>
+          <div class="confirm-actions">
+            <button type="submit" value="cancel" formnovalidate class="btn-secondary">Cancel</button>
+            <button type="submit" value="save" id="quick-monitor-save">Start monitoring</button>
+          </div>
+          <span id="quick-monitor-status" class="status" role="status"></span>
+        </form>
+      </dialog>
 
       <dialog id="booking-dialog" class="confirm-dialog booking-dialog">
         <form method="dialog" id="booking-form" class="confirm-dialog-form">
