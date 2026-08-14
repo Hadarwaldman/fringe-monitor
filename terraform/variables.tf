@@ -58,6 +58,19 @@ variable "fringe_proxy_param" {
   default     = "/fringe-monitor/proxy-url"
 }
 
+variable "planmyfringe_creds_param" {
+  description = <<-EOT
+    SSM SecureString parameter holding PlanMyFringe account credentials as
+    JSON ({"user_id": "...", "password": "..."}). Created manually (never in
+    TF state):
+    aws ssm put-parameter --name /fringe-monitor/planmyfringe-credentials \
+      --type SecureString --value '{"user_id":"...","password":"..."}'
+    The /planner/sync endpoint returns 409 while it does not exist.
+  EOT
+  type        = string
+  default     = "/fringe-monitor/planmyfringe-credentials"
+}
+
 variable "daily_schedule" {
   description = "EventBridge schedule for full scan (UTC)"
   type        = string

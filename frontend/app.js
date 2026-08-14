@@ -1406,7 +1406,13 @@
     }
     let matched = 0;
     let soldHits = 0;
-    tbody.innerHTML = state.scheduleRows
+    const rowTime = (row) => row.Time || row.time || "";
+    const sortedRows = [...state.scheduleRows].sort((a, b) => {
+      const da = parsePlanDate(a.Date || a.date) || "";
+      const db = parsePlanDate(b.Date || b.date) || "";
+      return da === db ? rowTime(a).localeCompare(rowTime(b)) : da.localeCompare(db);
+    });
+    tbody.innerHTML = sortedRows
       .map((row) => {
         const date = parsePlanDate(row.Date || row.date);
         const show = findShow(row.Name || row.name || row.Show);
@@ -1423,6 +1429,7 @@
         const bookedTip = row.__confirmed ? ` title="Confirmed on PlanMyFringe — tickets already booked"` : "";
         return `<tr>
           <td>${escapeHtml(row.Date || date || "")}</td>
+          <td>${escapeHtml(rowTime(row) || "—")}</td>
           <td><strong>${escapeHtml(row.Name || "")}</strong>${bookedForDay ? ` <span class="pill booked"${bookedTip}>booked</span>` : ""}${scoreChip(row.Name)}<div class="dates">${escapeHtml(row.Venue || "")}</div></td>
           <td>${pill(status)}</td>
           <td class="remaining"><span class="rem ${status}">${escapeHtml(rem)}</span></td>

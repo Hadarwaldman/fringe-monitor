@@ -159,6 +159,30 @@ def replace_auto_watchlist(items: list[dict[str, Any]], table=None) -> int:
     return upsert_watch_items(auto_only + manual, table)
 
 
+def replace_watchlist_source(
+    source: str, items: list[dict[str, Any]], table=None
+) -> int:
+    """Replace watch items from one source (e.g. "planmyfringe"); keep all
+    others. Items whose performance is already watched from another source
+    are left untouched rather than overwritten."""
+    table = table or dynamodb_table()
+    existing = list_watchlist(table)
+    stale_sks = {i["sk"] for i in existing if i.get("source") == source}
+    with table.batch_writer() as batch:
+        for sk in stale_sks:
+            batch.delete_item(Key={"pk": "WATCHLIST", "sk": sk})
+
+    other_ids = {
+        str(i.get("performance_id")) for i in existing if i.get("source") != source
+    }
+    fresh = [
+        {**i, "source": source}
+        for i in items
+        if str(i.get("performance_id")) not in other_ids
+    ]
+    return upsert_watch_items(fresh, table)
+
+
 def list_monitors(table=None) -> list[dict[str, Any]]:
     table = table or dynamodb_table()
     items: list[dict[str, Any]] = []

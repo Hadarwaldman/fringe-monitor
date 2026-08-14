@@ -9,17 +9,28 @@ import boto3
 
 from fringe_lib.aws_util import (
     delete_monitor,
+    env,
     get_config,
+    get_json_s3,
     get_monitor,
     list_monitors,
     list_watchlist,
     patch_monitor,
     put_config,
+    put_json_s3,
     put_monitor,
+    replace_watchlist_source,
     upsert_watch_items,
 )
-from fringe_lib.cart import credentials_configured
+from fringe_lib.cart import credentials_configured, load_proxy_into_env
 from fringe_lib.monitors import new_monitor
+from fringe_lib.planmyfringe import (
+    get_planmyfringe_credentials,
+    mask_user_id,
+    store_credentials,
+    sync_planner,
+    verify_credentials,
+)
 
 
 def _response(status: int, body: Any, *, cors: bool = True) -> dict[str, Any]:
@@ -165,6 +176,58 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             monitor_id = monitor_match.group(1)
             delete_monitor(monitor_id)
             return _response(200, {"deleted": monitor_id})
+
+        if path.endswith("/settings/planmyfringe") and method == "GET":
+            creds = get_planmyfringe_credentials()
+            return _response(
+                200,
+                {
+                    "configured": creds is not None,
+                    "user_id": mask_user_id(creds["user_id"]) if creds else None,
+                },
+            )
+
+        if path.endswith("/settings/planmyfringe") and method == "PUT":
+            body = _parse_body(event)
+            user_id = str(body.get("user_id") or "").strip()
+            password = str(body.get("password") or "")
+            if not user_id or not password:
+                return _response(400, {"error": "user_id and password are required"})
+            creds = {"user_id": user_id, "password": password}
+            load_proxy_into_env()
+            try:
+                verify_credentials(creds)
+            except RuntimeError as exc:
+                return _response(401, {"error": str(exc)})
+            store_credentials(creds)
+            return _response(
+                200,
+                {"ok": True, "configured": True, "user_id": mask_user_id(user_id)},
+            )
+
+        if path.endswith("/planner/sync") and method == "POST":
+            load_proxy_into_env()
+            creds = get_planmyfringe_credentials()
+            if creds is None:
+                return _response(
+                    409,
+                    {
+                        "error": "PlanMyFringe credentials not configured — create "
+                        "the SSM SecureString named by PLANMYFRINGE_CREDS_PARAM"
+                    },
+                )
+            latest = get_json_s3(env("DATA_BUCKET"), "data/latest.json") or {}
+            result = sync_planner(credentials=creds, latest=latest)
+            put_json_s3(env("DATA_BUCKET"), "data/planner.json", result["planner"])
+            imported = replace_watchlist_source("planmyfringe", result["watch_items"])
+            return _response(
+                200,
+                {
+                    "ok": True,
+                    "summary": {**result["summary"], "watchlist_imported": imported},
+                    "planner": result["planner"],
+                },
+            )
 
         if path.endswith("/health") and method == "GET":
             return _response(200, {"ok": True, "service": "fringe-monitor"})
