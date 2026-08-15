@@ -1,7 +1,7 @@
 resource "aws_cloudwatch_event_rule" "daily_full_scan" {
   name                = "${local.name}-daily-full-scan"
-  description         = "Daily Fringe full programme scan"
-  schedule_expression = var.daily_schedule
+  description         = "Fringe full programme scan (hourly)"
+  schedule_expression = var.full_scan_schedule
 }
 
 resource "aws_cloudwatch_event_target" "daily_full_scan" {

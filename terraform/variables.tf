@@ -71,10 +71,17 @@ variable "planmyfringe_creds_param" {
   default     = "/fringe-monitor/planmyfringe-credentials"
 }
 
-variable "daily_schedule" {
-  description = "EventBridge schedule for full scan (UTC)"
+variable "full_scan_schedule" {
+  description = <<-EOT
+    EventBridge schedule for the full programme scan (UTC). Hourly keeps
+    data/latest.json fresh enough to plan against during the day — a scan
+    takes ~4 min, and the 15-min watchlist job already fetches the whole
+    programme, so the extra proxy traffic is incremental.
+
+    Renamed from `daily_schedule`; drop that key from terraform.tfvars.
+  EOT
   type        = string
-  default     = "cron(0 6 * * ? *)" # 06:00 UTC daily
+  default     = "cron(0 * * * ? *)" # top of every hour
 }
 
 variable "watchlist_schedule" {
