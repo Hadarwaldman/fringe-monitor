@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import re
@@ -23,7 +24,9 @@ from fringe_lib.aws_util import (
     upsert_watch_items,
 )
 from fringe_lib.cart import credentials_configured, load_proxy_into_env
-from fringe_lib.monitors import new_monitor
+from fringe_lib.client import FringeClient, make_async_client
+from fringe_lib.live import check_box_office_ids, summarize
+from fringe_lib.monitors import new_monitor, now_iso
 from fringe_lib.planmyfringe import (
     get_planmyfringe_credentials,
     mask_user_id,
@@ -59,6 +62,30 @@ def _parse_body(event: dict[str, Any]) -> dict[str, Any]:
     if not raw:
         return {}
     return json.loads(raw)
+
+
+def _live_check(specs: list[dict[str, Any]], meta: dict[str, Any], nearly: int) -> dict[str, Any]:
+    """Run live performancePrices lookups through the residential proxy.
+
+    Kept synchronous at the edge so the route handler stays flat; the fan-out
+    across performances happens inside check_box_office_ids."""
+    load_proxy_into_env()
+
+    async def run() -> list[Any]:
+        async with make_async_client(timeout=20.0) as client:
+            api = FringeClient(client)
+            await api.authenticate()
+            return await check_box_office_ids(
+                api, specs, nearly_threshold=nearly, meta=meta
+            )
+
+    rows = asyncio.run(run())
+    return {
+        "ok": True,
+        "checked_at": now_iso(),
+        **summarize(rows),
+        "performances": [r.to_public_dict() for r in rows],
+    }
 
 
 def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
@@ -233,6 +260,59 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                     "planner": result["planner"],
                 },
             )
+
+        if path.endswith("/live") and method in {"GET", "POST"}:
+            # Live availability for specific performances — no programme fetch,
+            # so it fits comfortably inside the API Lambda's 30s budget.
+            # Either supply `performances` (box-office IDs, as the frontend and
+            # monitor creation already do) or name an existing `monitor_id`.
+            body = _parse_body(event) if method == "POST" else {}
+            params = event.get("queryStringParameters") or {}
+            monitor_id = body.get("monitor_id") or params.get("monitor_id")
+
+            meta: dict[str, Any] = {}
+            if monitor_id:
+                monitor = get_monitor(str(monitor_id))
+                if monitor is None:
+                    return _response(404, {"error": "monitor not found"})
+                specs = list(monitor.get("performances") or [])
+                meta = {
+                    "show_title": monitor.get("show_title") or "",
+                    "slug": monitor.get("slug") or "",
+                    "url": monitor.get("url") or "",
+                }
+            else:
+                specs = list(body.get("performances") or [])
+                meta = {
+                    "show_title": body.get("show_title") or "",
+                    "slug": body.get("slug") or "",
+                    "url": body.get("url") or "",
+                    "venue": body.get("venue") or "",
+                    "genre": body.get("genre") or "",
+                }
+
+            specs = [s for s in specs if s.get("performance_id") is not None]
+            start = body.get("start_date") or params.get("start_date")
+            end = body.get("end_date") or params.get("end_date")
+            if start:
+                specs = [s for s in specs if str(s.get("date") or "") >= str(start)]
+            if end:
+                specs = [s for s in specs if str(s.get("date") or "") <= str(end)]
+
+            if not specs:
+                return _response(
+                    400,
+                    {
+                        "error": "no performances to check — pass `performances` "
+                        "(with performance_id + box_office_id) or a `monitor_id`"
+                    },
+                )
+
+            nearly = int(
+                body.get("nearly_threshold")
+                or (get_config().get("nearly_threshold") or 20)
+            )
+            return _response(200, _live_check(specs, meta, nearly))
 
         if path.endswith("/health") and method == "GET":
             return _response(200, {"ok": True, "service": "fringe-monitor"})

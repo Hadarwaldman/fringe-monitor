@@ -147,48 +147,25 @@ async def rows_from_box_office_ids(
     """Cheap path: build rows for one monitor by directly querying
     performancePrices for each stored performance's box_office_id — no
     programme fetch. Returns [] if the monitor has no seeded performances,
-    so the caller can fall back to the programme path."""
-    from .scan import PRICES_QUERY, classify_availability
+    so the caller can fall back to the programme path.
+
+    Shares `live.check_box_office_ids` with the on-demand /live query, so the
+    two never drift apart on classification or fail-open behaviour."""
+    from .live import check_box_office_ids
 
     seeded = monitor.get("performances") or []
-    rows: list[PerformanceRow] = []
-    for perf in seeded:
-        box_id = perf.get("box_office_id")
-        row = PerformanceRow(
-            show_title=monitor.get("show_title") or "",
-            slug=monitor.get("slug") or "",
-            genre="",
-            venue="",
-            performance_id=int(perf["performance_id"]),
-            performance_title="",
-            date_local=perf.get("date") or "",
-            time_local=perf.get("time") or "",
-            datetime_utc="",
-            ticket_status="",
-            sold_out_flag=False,
-            box_office_id=box_id,
-        )
-        if not box_id:
-            row.availability = "available"
-            rows.append(row)
-            continue
-        try:
-            data = await api.graphql(PRICES_QUERY, {"performanceId": box_id})
-            result = (data["performancePrices"].get("result") or {})
-            row.percent_remaining = result.get("performancePercentageRemaining")
-            row.availability_level = result.get("performanceAvailabilityLevel")
-            row.availability = classify_availability(
-                sold_out=False,
-                ticket_status="",
-                percent_remaining=row.percent_remaining,
-                availability_level=row.availability_level,
-                nearly_threshold=nearly,
-            )
-        except Exception as exc:  # noqa: BLE001
-            print(f"  warn: price lookup failed for {box_id}: {exc}", flush=True)
-            row.availability = "available"
-        rows.append(row)
-    return sorted(rows, key=lambda r: (r.date_local, r.time_local))
+    if not seeded:
+        return []
+    return await check_box_office_ids(
+        api,
+        seeded,
+        nearly_threshold=nearly,
+        meta={
+            "show_title": monitor.get("show_title") or "",
+            "slug": monitor.get("slug") or "",
+            "url": monitor.get("url") or "",
+        },
+    )
 
 
 async def run_monitor_checks(
