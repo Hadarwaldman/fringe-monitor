@@ -2013,6 +2013,12 @@
   // latest.json is in flight.
   renderAll();
 
+  // planner.json is ~100 KB and needs nothing from the scan. Chaining it
+  // behind latest.json meant a slow or stalled scan fetch hid the wishlist
+  // completely, even while the itinerary rendered fine from localStorage.
+  // It re-renders itself on arrival, and again when the scan lands.
+  loadPlanner();
+
   const loads = [loadConfig(), loadLatest()];
   if (page === "show") loads.push(loadDetails());
   Promise.all(loads)
@@ -2029,7 +2035,6 @@
         // The window just moved, so the render loadLatest() did is stale.
         renderAll();
       }
-      return loadPlanner();
     })
     .catch((err) => {
       const meta = $("meta");
