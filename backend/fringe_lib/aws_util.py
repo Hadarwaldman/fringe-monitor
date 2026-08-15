@@ -272,9 +272,6 @@ def delete_monitor(monitor_id: str, table=None) -> None:
     table.delete_item(Key={"pk": "MONITOR", "sk": str(monitor_id)})
 
 
-EDFRINGE_BASKET_URL = "https://www.edfringe.com/tickets/basket"
-
-
 def _fmt_avail(value: str | None) -> str:
     return {
         "available": "Available",
@@ -283,35 +280,8 @@ def _fmt_avail(value: str | None) -> str:
     }.get(value or "", value or "unknown")
 
 
-def _monitor_email_text(
-    *, show, monitor, openings, statuses, hold, held, checkout_url
-) -> str:
-    lines: list[str] = []
-    if held:
-        lines.append(f"TICKETS HELD IN YOUR BASKET — {show}")
-        lines.append(
-            f"{hold.get('quantity')} ticket(s) for {hold.get('date')} "
-            f"{hold.get('time')} are in your edfringe basket."
-        )
-        lines.append(
-            f"Total £{hold.get('basket_total')} · expires in "
-            f"{hold.get('expires_in') or '~30 minutes'}."
-        )
-        lines.append("")
-        lines.append(f"Complete your purchase → {checkout_url}")
-        lines.append(
-            "(Log in as waldieebar@gmail.com — the basket is on that account.)"
-        )
-    else:
-        lines.append(f"TICKETS AVAILABLE — {show}")
-        if hold is not None and not hold.get("success"):
-            lines.append(
-                f"Auto-hold could not be placed ({hold.get('error')}). "
-                "Book manually below."
-            )
-        lines.append("")
-        lines.append(f"Book now → {monitor.get('url') or checkout_url}")
-
+def _monitor_email_text(*, show, monitor, openings, statuses) -> str:
+    lines = [f"TICKETS AVAILABLE — {show}", "", f"Book now → {monitor.get('url') or ''}"]
     lines.append("")
     lines.append("Newly available:")
     for item in openings:
@@ -341,9 +311,7 @@ def _monitor_email_text(
     return "\n".join(lines)
 
 
-def _monitor_email_html(
-    *, show, monitor, openings, statuses, hold, held, checkout_url
-) -> str:
+def _monitor_email_html(*, show, monitor, openings, statuses) -> str:
     import html
 
     esc = html.escape
@@ -369,49 +337,20 @@ def _monitor_email_html(
             )
         return "".join(out)
 
-    if held:
-        banner = (
-            f'<div style="background:#d7efe9;border:1px solid #0f6a5a;'
-            f'border-radius:8px;padding:16px;">'
-            f'<div style="font-size:18px;font-weight:700;color:#0f4a40;">'
-            f"🎟️ Tickets held in your basket</div>"
-            f'<p style="margin:8px 0 0;font-size:14px;color:#1c1915;">'
-            f"<strong>{hold.get('quantity')}</strong> ticket(s) for "
-            f"<strong>{esc(str(hold.get('date')))} {esc(str(hold.get('time')))}</strong> "
-            f"are in your edfringe basket.<br>"
-            f"Total <strong>£{esc(str(hold.get('basket_total')))}</strong> · "
-            f"expires in {esc(str(hold.get('expires_in') or '~30 minutes'))}.</p></div>"
-        )
-        cta_label = "Complete purchase in basket"
-        cta_url = checkout_url
-        cta_note = (
-            "<p style=\"font-size:12px;color:#5c564c;margin:8px 0 0;\">"
-            "Log in as <strong>waldieebar@gmail.com</strong> — the basket is on "
-            "that account.</p>"
-        )
-    else:
-        note = ""
-        if hold is not None and not hold.get("success"):
-            note = (
-                f'<p style="margin:8px 0 0;font-size:13px;color:#8a4b12;">'
-                f"Auto-hold could not be placed: {esc(str(hold.get('error')))}. "
-                f"Book manually below.</p>"
-            )
-        banner = (
-            f'<div style="background:#d7efe9;border:1px solid #0f6a5a;'
-            f'border-radius:8px;padding:16px;">'
-            f'<div style="font-size:18px;font-weight:700;color:#0f4a40;">'
-            f"🎟️ Tickets available</div>{note}</div>"
-        )
-        cta_label = "Book now on edfringe"
-        cta_url = monitor.get("url") or checkout_url
-        cta_note = ""
-
+    banner = (
+        f'<div style="background:#d7efe9;border:1px solid #0f6a5a;'
+        f'border-radius:8px;padding:16px;">'
+        f'<div style="font-size:18px;font-weight:700;color:#0f4a40;">'
+        f"🎟️ Tickets available</div></div>"
+    )
+    cta_url = monitor.get("url") or ""
     button = (
         f'<a href="{esc(cta_url)}" '
         f'style="display:inline-block;background:#0f6a5a;color:#f7fffc;'
         f'text-decoration:none;font-weight:600;padding:12px 22px;border-radius:8px;'
-        f'font-size:15px;">{esc(cta_label)}</a>'
+        f'font-size:15px;">Book now on edfringe</a>'
+        if cta_url
+        else ""
     )
 
     opening_tbl = (
@@ -434,7 +373,7 @@ def _monitor_email_html(
         f'max-width:560px;margin:0 auto;color:#1c1915;">'
         f'<h1 style="font-size:20px;margin:0 0 4px;">{show_e}</h1>'
         f"{banner}"
-        f'<div style="margin:18px 0;">{button}{cta_note}</div>'
+        f'<div style="margin:18px 0;">{button}</div>'
         f'<p style="font-size:13px;color:#5c564c;margin:0 0 4px;">Newly available</p>'
         f"{opening_tbl}"
         f"{status_tbl}"
@@ -450,21 +389,15 @@ def send_monitor_email(
     monitor: dict[str, Any],
     openings: list[dict[str, Any]],
     statuses: list[dict[str, Any]],
-    hold: dict[str, Any] | None,
 ) -> None:
     show = monitor.get("show_title") or monitor.get("slug") or "show"
-    held = bool(hold.get("success")) if hold else False
-    checkout_url = EDFRINGE_BASKET_URL
-    kwargs = dict(
-        show=show,
-        monitor=monitor,
-        openings=openings,
-        statuses=statuses,
-        hold=hold,
-        held=held,
-        checkout_url=checkout_url,
-    )
-    subject = f"{'🎟️ Tickets HELD' if held else '🎟️ Tickets available'}: {show}"
+    kwargs = {
+        "show": show,
+        "monitor": monitor,
+        "openings": openings,
+        "statuses": statuses,
+    }
+    subject = f"🎟️ Tickets available: {show}"
     ses_client().send_email(
         FromEmailAddress=from_address,
         Destination={"ToAddresses": [to_address]},
@@ -472,14 +405,8 @@ def send_monitor_email(
             "Simple": {
                 "Subject": {"Data": subject, "Charset": "UTF-8"},
                 "Body": {
-                    "Text": {
-                        "Data": _monitor_email_text(**kwargs),
-                        "Charset": "UTF-8",
-                    },
-                    "Html": {
-                        "Data": _monitor_email_html(**kwargs),
-                        "Charset": "UTF-8",
-                    },
+                    "Text": {"Data": _monitor_email_text(**kwargs), "Charset": "UTF-8"},
+                    "Html": {"Data": _monitor_email_html(**kwargs), "Charset": "UTF-8"},
                 },
             }
         },

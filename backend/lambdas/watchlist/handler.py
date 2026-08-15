@@ -17,7 +17,7 @@ from fringe_lib.aws_util import (
     send_reopen_email,
     upsert_watch_items,
 )
-from fringe_lib.cart import load_proxy_into_env
+from fringe_lib.proxy import load_proxy_into_env
 from fringe_lib.client import FringeClient, make_async_client
 from fringe_lib.monitors import run_monitor_checks
 from fringe_lib.scan import (
@@ -74,7 +74,7 @@ async def run_watchlist_check() -> dict[str, Any]:
         )
         if monitors:
             monitor_result = await run_monitor_checks(
-                api, client, events, config, monitors
+                api, events, config, monitors
             )
 
     openings: list[dict[str, Any]] = []

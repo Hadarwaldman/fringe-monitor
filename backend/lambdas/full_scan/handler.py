@@ -14,7 +14,7 @@ from fringe_lib.aws_util import (
     put_json_s3,
     replace_auto_watchlist,
 )
-from fringe_lib.cart import load_proxy_into_env
+from fringe_lib.proxy import load_proxy_into_env
 from fringe_lib.client import FringeClient, make_async_client
 from fringe_lib.edfest_offers import (
     EDFEST_SHOW_URL,

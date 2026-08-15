@@ -819,14 +819,6 @@
             To
             <input type="date" id="quick-monitor-end" required />
           </label>
-          <label>
-            Tickets
-            <input type="number" id="quick-monitor-qty" min="1" max="6" value="2" />
-          </label>
-          <label class="hold-check">
-            <input type="checkbox" id="quick-monitor-hold" />
-            Hold tickets in basket when they open
-          </label>
           <p class="field-hint">
             You’ll get an email when any performance in this range becomes buyable.
             Manage monitors on the <a href="./monitors.html">Monitors</a> page.
@@ -912,8 +904,6 @@
     $("quick-monitor-start").value = presetDate || state.view.start || win.start_date;
     $("quick-monitor-end").value =
       state.view.end || win.end_date || presetDate || win.start_date;
-    $("quick-monitor-qty").value = 2;
-    $("quick-monitor-hold").checked = false;
     $("quick-monitor-status").textContent = "";
     $("monitor-dialog").showModal();
   }
@@ -957,8 +947,6 @@
           url: $("quick-monitor-url").value,
           start_date: start,
           end_date: end,
-          quantity: Number($("quick-monitor-qty").value || 1),
-          hold_tickets: $("quick-monitor-hold").checked,
           performances,
         }),
       });

@@ -3,7 +3,7 @@
 Unlike the 15-min watchlist job, this does NOT fetch the whole programme. For
 each active monitor it queries performancePrices for the monitor's stored
 box-office IDs only (seeded at creation or on first run), so a frequent cadence
-stays cheap. Alerts + holds are handled by the shared run_monitor_checks.
+stays cheap. Availability alerts are handled by the shared run_monitor_checks.
 
 Shares the watchlist DynamoDB lock so it can't race with the 15-min job.
 """
@@ -19,7 +19,7 @@ from fringe_lib.aws_util import (
     list_monitors,
     release_watchlist_lock,
 )
-from fringe_lib.cart import load_proxy_into_env
+from fringe_lib.proxy import load_proxy_into_env
 from fringe_lib.client import FringeClient, make_async_client
 from fringe_lib.monitors import run_monitor_checks
 
@@ -38,7 +38,7 @@ async def run_monitor_only_check() -> dict[str, Any]:
         await api.authenticate()
         # events=None → run_monitor_checks fetches the programme only if some
         # monitor has no seeded box-office IDs (first run), then self-seeds.
-        result = await run_monitor_checks(api, client, None, config, monitors)
+        result = await run_monitor_checks(api, None, config, monitors)
 
     print(json.dumps({"ok": True, **result}), flush=True)
     return {"ok": True, **result}

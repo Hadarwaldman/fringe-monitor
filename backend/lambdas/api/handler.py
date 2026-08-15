@@ -22,7 +22,7 @@ from fringe_lib.aws_util import (
     replace_watchlist_source,
     upsert_watch_items,
 )
-from fringe_lib.cart import credentials_configured, load_proxy_into_env
+from fringe_lib.proxy import load_proxy_into_env
 from fringe_lib.monitors import new_monitor
 from fringe_lib.planmyfringe import (
     get_planmyfringe_credentials,
@@ -107,13 +107,7 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             return _response(200, {"upserted": count, "items": list_watchlist()})
 
         if path.endswith("/monitors") and method == "GET":
-            return _response(
-                200,
-                {
-                    "items": list_monitors(),
-                    "hold_credentials_configured": credentials_configured(),
-                },
-            )
+            return _response(200, {"items": list_monitors()})
 
         if path.endswith("/monitors") and method == "POST":
             body = _parse_body(event)
@@ -128,8 +122,6 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                 show_title=str(body["show_title"]),
                 start_date=str(body["start_date"]),
                 end_date=str(body["end_date"]),
-                quantity=int(body.get("quantity") or 1),
-                hold_tickets=bool(body.get("hold_tickets")),
                 url=str(body.get("url") or ""),
                 performances=body.get("performances") or [],
             )
@@ -160,18 +152,8 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             if get_monitor(monitor_id) is None:
                 return _response(404, {"error": "monitor not found"})
             body = _parse_body(event)
-            allowed = {
-                "start_date",
-                "end_date",
-                "quantity",
-                "hold_tickets",
-                "active",
-            }
+            allowed = {"start_date", "end_date", "active"}
             patch = {k: body[k] for k in allowed if k in body}
-            if "quantity" in patch:
-                patch["quantity"] = max(1, int(patch["quantity"]))
-            if "hold_tickets" in patch:
-                patch["hold_tickets"] = bool(patch["hold_tickets"])
             if "active" in patch:
                 patch["active"] = bool(patch["active"])
             patch_monitor(monitor_id, patch)

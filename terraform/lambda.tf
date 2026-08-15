@@ -6,7 +6,6 @@ locals {
     FROM_EMAIL               = var.notify_email
     DEFAULT_START_DATE       = var.default_start_date
     DEFAULT_END_DATE         = var.default_end_date
-    EDFRINGE_CREDS_PARAM     = var.edfringe_creds_param
     FRINGE_PROXY_PARAM       = var.fringe_proxy_param
     PLANMYFRINGE_CREDS_PARAM = var.planmyfringe_creds_param
   }
