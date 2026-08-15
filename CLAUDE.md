@@ -4,12 +4,13 @@ Guidance for working in this repo. See `README.md` for full architecture and liv
 
 ## What this is
 
-A cheap, serverless monitor for Edinburgh Festival Fringe ticket availability. It scans the whole programme daily, re-checks a watchlist every 15 minutes and emails when tickets reopen, and serves a static CloudFront UI. All infra is Terraform; everything runs in AWS `us-east-1`, account `152930225704`, profile `hadar-pc`.
+A cheap, serverless monitor for Edinburgh Festival Fringe ticket availability. It scans the whole programme hourly, re-checks a watchlist every 15 minutes and emails when tickets reopen, and serves a static CloudFront UI. All infra is Terraform; everything runs in AWS `us-east-1`, account `152930225704`, profile `hadar-pc`.
 
 ## Layout
 
 ```
 scan_fringe.py          Local CLI entry point (no AWS) — writes CSV/JSON to output/
+query_show.py           Local CLI: live availability for one show (fast; --via proxy|direct|remote)
 backend/
   fringe_lib/           Shared scanner + AWS helpers (imported by CLI and all Lambdas)
     client.py           httpx client for the edfringe GraphQL API (anon creds embedded)
@@ -20,12 +21,15 @@ backend/
     monitors.py         Show monitors: per-show/date-range availability alerts (+optional hold)
     planmyfringe.py     PlanMyFringe account sync: login + scrape schedule/wishlist, match to scan
     cart.py             edfringe login + add-to-basket ("hold tickets"); creds from SSM SecureString
+    live.py             On-demand availability for specific performances (direct box-office-id
+                        lookups, no programme fetch). Shared by query_show.py, POST /live and
+                        the monitor check, so all three classify identically.
     aws_util.py         boto3 helpers: DynamoDB config/watchlist/monitors, S3 writes (Lambda-only)
   lambdas/
-    full_scan/handler.py     Daily job (EventBridge cron 06:00 UTC)
+    full_scan/handler.py     Hourly job (EventBridge cron(0 * * * ? *))
     watchlist/handler.py     15-min job: watchlist reopen emails (full programme fetch) + monitors
     monitor_check/handler.py 3-min job: lightweight show-monitor check (direct box-office-id price lookups, no programme fetch)
-    api/handler.py           HTTP API Gateway backend (/config, /watchlist, /monitors, /health)
+    api/handler.py           HTTP API Gateway backend (/config, /watchlist, /monitors, /live, /health)
   requirements.txt      Lambda runtime deps (httpx)
 frontend/               Static CloudFront site. ui.js renders the shared nav (header + mobile
                         tab bar) and owns user/date-window localStorage. app.js drives three
@@ -33,6 +37,10 @@ frontend/               Static CloudFront site. ui.js renders the shared nav (he
                         shows.html (programme browser), show.html (show detail). Plus
                         monitors.html/monitors.js and settings.html/settings.js.
 terraform/              All AWS infra; remote S3 state
+.claude/skills/
+  recommend/            /recommend skill: show recommendations from scan + planner + live checks.
+                        Bundles scripts/fringe_context.py (sync/day/candidates/show) — use it
+                        instead of re-deriving the S3+DynamoDB joins by hand.
 scripts/
   package_lambda.sh     Builds build/lambda.zip
   deploy.sh             Full local deploy: package + terraform apply + sync UI + invalidate
@@ -88,6 +96,8 @@ cd terraform && AWS_PROFILE=hadar-pc terraform output
 - Full scan writes `s3://<data-bucket>/data/latest.json` (frontend source of truth), `data/details.json` (show descriptions, venue addresses, EdFest ticket links — used only by show.html; the UI degrades gracefully when it's absent), `data/config.json`, and a CSV.
 - Config + watchlist + monitors live in DynamoDB table `fringe-monitor` (single-table: `CONFIG/MAIN`, `WATCHLIST/<perf_id>`, `ALERT/<perf_id>`, `MONITOR/<monitor_id>`).
 - **Egress proxy (required in AWS):** the edfringe API is behind Cloudflare, which 403s AWS datacenter IPs. All Lambda→edfringe traffic must go through a residential proxy. The proxy URL (`http://user:pass@host:port`) lives ONLY in SSM SecureString `/fringe-monitor/proxy-url`; the Lambdas load it into `FRINGE_PROXY_URL` at runtime via `cart.load_proxy_into_env()`, and `client.make_async_client()` routes through it. Locally (residential IP) leave it unset → direct. Without it, the daily scan and monitors both 403.
+- **Full scan cadence:** hourly, `cron(0 * * * ? *)`, set by the `full_scan_schedule` Terraform variable (renamed from `daily_schedule` — drop that key from any local `terraform.tfvars` or it lingers as an undeclared-variable warning). The EventBridge rule is still named `…-daily-full-scan`; renaming it would force a resource replacement for no benefit. `trend.merge_history` keys snapshots by date and replaces same-day entries, so hourly runs refresh the day's entry rather than piling up duplicates.
+- **Live lookups:** `fringe_lib.live.check_box_office_ids` is the one implementation of "what is the truth right now for these performances" — one `performancePrices` call each, bounded concurrency, no programme fetch. `POST /live`, `query_show.py` and `monitors.rows_from_box_office_ids` all route through it. It is deliberately **fail-open**: a lookup that errors leaves the row `available` with `percent_remaining=None`, so a network blip never fabricates a sell-out. Callers that need certainty must treat a null `percent_remaining` as unknown.
 - Monitor check cadence: the lightweight `monitor-check` Lambda runs every 3 min (`rate(3 minutes)`), checking each monitor via direct `performancePrices(box_office_id)` lookups on its stored `performances` (seeded at creation from the frontend's scan data, or self-seeded via one programme fetch on first run). No full programme fetch → cheap enough for frequent runs. The 15-min watchlist job also still checks monitors (it has the programme in hand). Both share the DynamoDB LOCK/WATCHLIST mutex so they never race.
 - Show monitors (monitors.html): one show + date range; the 15-min lambda emails when any performance in range becomes buyable, and (if `hold_tickets`) logs into the user's edfringe account and adds tickets to the basket (~30-min hold). edfringe credentials live ONLY in the SSM SecureString `/fringe-monitor/edfringe-credentials` (JSON `{"email","password"}`), created manually via `aws ssm put-parameter` — never commit them, never put them in Terraform/DynamoDB. Holds are skipped gracefully when the parameter is absent. Hold policy: one hold per monitor per opening (earliest newly-opened performance only) — never re-add on every check.
 - The date window is stored in DynamoDB config; change it via the UI (**Save dates**) or `PUT /config` — takes effect on the next scan.

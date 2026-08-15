@@ -4,7 +4,7 @@ Cheap AWS monitor for [Edinburgh Festival Fringe](https://www.edfringe.com/ticke
 
 It:
 
-1. **Scans the full programme daily** and classifies each performance in a date window as `sold_out` / `nearly_sold_out` / `available`
+1. **Scans the full programme hourly** and classifies each performance in a date window as `sold_out` / `nearly_sold_out` / `available`
 2. **Re-checks a watchlist every 15 minutes** for tickets that reopen, and emails you
 3. Serves a **CloudFront frontend** with a show table, configurable date window, and PlanMyFringe CSV compare
 
@@ -60,9 +60,9 @@ cd terraform && AWS_PROFILE=hadar-pc terraform output
            (table + CSV schedule compare)
 ```
 
-### Daily full scan (`fringe-monitor-full-scan`)
+### Hourly full scan (`fringe-monitor-full-scan`)
 
-- Trigger: EventBridge `cron(0 6 * * ? *)` (06:00 UTC daily), or manual invoke
+- Trigger: EventBridge `cron(0 * * * ? *)` (top of every hour), or manual invoke
 - Reads date window + settings from DynamoDB `CONFIG/MAIN`
 - Authenticates to the public Fringe tickets API and pages the **entire programme**
 - Classifies ticketed performances in the configured window (price/% remaining when needed)
@@ -126,7 +126,7 @@ AWS_PROFILE=hadar-pc aws ssm put-parameter \
 ```
 
 The local CLI runs from a residential IP, so it leaves `FRINGE_PROXY_URL`
-unset and connects directly. Without the proxy parameter, the daily full scan
+unset and connects directly. Without the proxy parameter, the hourly full scan
 and the 15-minute watchlist/monitor checks all fail with 403.
 
 ### API (`fringe-monitor-api`)
@@ -145,8 +145,36 @@ HTTP API Gateway → Lambda.
 | `PUT` | `/monitors/{id}` | Update dates/quantity/`hold_tickets`/`active` |
 | `DELETE` | `/monitors/{id}` | Remove a monitor |
 | `POST` | `/monitors/check` | Run the 15-minute check immediately (async) |
+| `GET`/`POST` | `/live` | Live availability for specific performances (see below) |
 
 CORS is open (`*`) so the CloudFront site can call it.
+
+#### `POST /live` — availability right now
+
+The scan is a snapshot; this route is the current truth for a handful of
+performances. It does **no** programme fetch — one `performancePrices` call per
+performance through the residential proxy — so it finishes well inside the API
+Lambda's 30 s budget.
+
+Pass the performances (the frontend and monitor creation already carry their
+box-office IDs), or name an existing monitor:
+
+```bash
+curl -sX POST "$API/live" -H 'content-type: application/json' -d '{
+  "slug": "after-party", "show_title": "After Party",
+  "performances": [{"performance_id": 30744, "box_office_id": "1:805034",
+                    "date": "2026-08-15", "time": "14:45"}]
+}'
+
+curl -s "$API/live?monitor_id=3f4b63b09489"
+```
+
+Optional: `start_date` / `end_date` to trim the list, `nearly_threshold` to
+override the config default.
+
+A `percent_remaining` of `null` means the lookup returned nothing **or**
+failed — treat it as unknown, not as available. The check is deliberately
+fail-open so a network blip never reads as "sold out".
 
 ### Frontend
 
@@ -203,12 +231,13 @@ Table: `fringe-monitor` (pay-per-request), keys `pk` + `sk`.
 ```text
 .
 ├── README.md                 ← this doc
-├── scan_fringe.py            ← local CLI (uses shared lib)
+├── scan_fringe.py            ← local CLI: full programme scan
+├── query_show.py             ← local CLI: live availability for one show
 ├── requirements.txt
 ├── backend/
 │   ├── fringe_lib/           ← shared scanner + AWS helpers
 │   ├── lambdas/
-│   │   ├── full_scan/        ← daily job
+│   │   ├── full_scan/        ← hourly job
 │   │   ├── watchlist/        ← 15‑min job
 │   │   └── api/              ← HTTP API
 │   └── requirements.txt
@@ -238,6 +267,37 @@ Outputs under `output/`:
 - `fringe_show_summary.csv` — per show date buckets
 - `fringe_raw_programme.json` — raw programme snapshot
 - `latest.json` — same shape the cloud UI consumes
+
+---
+
+## Live show lookup (`query_show.py`)
+
+The full scan takes ~4 minutes; this asks about one show in ~2 seconds. It
+resolves the show from the most recent scan (local `output/latest.json` or S3),
+then re-checks each performance against the box office, so the availability is
+live even though the resolution is cached.
+
+```bash
+./query_show.py cathy --date 2026-08-15
+./query_show.py "one man musical" --via direct     # from a residential IP
+./query_show.py roleplay --start 2026-08-15 --end 2026-08-17 --json
+./query_show.py deepfake --via remote              # let the deployed Lambda do it
+```
+
+Transports, because reachability depends on where you run it:
+
+| `--via` | Path | Use when |
+|---|---|---|
+| `proxy` (default) | Residential proxy from SSM | Anywhere with AWS credentials |
+| `direct` | Straight to edfringe | Residential IP only — a datacenter IP gets a 403 |
+| `remote` | `POST /live` on the deployed API | The host can reach neither edfringe nor the proxy |
+
+Other flags: `--source` (`auto`/`local`/`s3`/a path) to choose which scan to
+resolve against, `--programme` to resolve via a full programme fetch when the
+show postdates the last scan, `--all` to check every match, `--json`.
+
+The lookup logic lives in `backend/fringe_lib/live.py` and is shared with the
+`/live` route and the monitor check, so all three classify identically.
 
 ---
 
