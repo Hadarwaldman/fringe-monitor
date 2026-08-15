@@ -741,8 +741,27 @@ tr.past-row td,
 
 /* ---------------------------------------------------------------- itinerary (My Fringe) */
 
+/* Desktop gets full tables; the card layout is mobile-only. */
+.mobile-cards {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  .mobile-cards {
+    display: block;
+  }
+
+  .desktop-table {
+    display: none;
+  }
+}
+
 .day-group {
   margin: 1.5rem 0 0.5rem;
+}
+
+.day-group .table-wrap {
+  margin-top: 0;
 }
 
 .day-group h3 {

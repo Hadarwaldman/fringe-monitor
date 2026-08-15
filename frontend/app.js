@@ -1225,8 +1225,8 @@
     return true;
   }
 
-  function itinCardHtml(entry) {
-    const tags = [];
+  function entryStatusHtml(entry) {
+    const bits = [];
     if (entry.booked) {
       const tip = entry.confirmed
         ? "Confirmed on PlanMyFringe — tickets already booked"
@@ -1235,7 +1235,7 @@
         entry.booking && Number.isFinite(Number(entry.booking.price))
           ? ` <span class="booked-price">${escapeHtml(formatPrice(entry.booking.price))}</span>`
           : "";
-      tags.push(`<span class="pill booked" title="${escapeAttr(tip)}">✓ booked</span>${price}`);
+      bits.push(`<span class="pill booked" title="${escapeAttr(tip)}">✓ booked</span>${price}`);
     }
     if (entry.date && entry.show) {
       const rem = remainingForDay(entry.show, entry.date);
@@ -1249,21 +1249,16 @@
                 ? `${rem} left`
                 : "on sale"
               : "no data";
-      tags.push(
+      bits.push(
         `<span class="rem ${entry.status}" title="${escapeAttr(`${entry.date} availability`)}">${escapeHtml(statusLabel)}</span>`,
       );
-      const deals = dealsForDayHtml(entry.show, entry.date);
-      if (deals) tags.push(deals);
     } else if (!entry.show) {
-      tags.push(`<span class="pill unknown" title="No match in the latest scan">no match</span>`);
+      bits.push(`<span class="pill unknown" title="No match in the latest scan">no match</span>`);
     }
-    if (entry.score != null) {
-      tags.push(`<span class="pill score" title="Your PlanMyFringe score">★ ${escapeHtml(entry.score)}</span>`);
-    }
-    if (entry.booking?.notes) {
-      tags.push(`<span class="dates">${escapeHtml(entry.booking.notes)}</span>`);
-    }
+    return bits.join(" ");
+  }
 
+  function entryActionsHtml(entry) {
     const actions = [];
     if (entry.show?.url) {
       actions.push(
@@ -1285,14 +1280,45 @@
         );
       }
     }
+    return actions.length ? `<div class="btn-row">${actions.join("")}</div>` : "";
+  }
+
+  function itinCardHtml(entry) {
+    const tags = [entryStatusHtml(entry)];
+    if (entry.date && entry.show) {
+      const deals = dealsForDayHtml(entry.show, entry.date);
+      if (deals) tags.push(deals);
+    }
+    if (entry.score != null) {
+      tags.push(`<span class="pill score" title="Your PlanMyFringe score">★ ${escapeHtml(entry.score)}</span>`);
+    }
+    if (entry.booking?.notes) {
+      tags.push(`<span class="dates">${escapeHtml(entry.booking.notes)}</span>`);
+    }
+    const actions = entryActionsHtml(entry);
 
     return `<article class="itin-card${entry.past ? " past" : ""}">
       <div class="itin-time">${escapeHtml(entry.time || "—")}</div>
       <div class="itin-title">${titleHtml(entry.show, entry.title)}</div>
       <div class="itin-venue">${escapeHtml(entry.venue || "")}</div>
-      <div class="itin-tags">${tags.join(" ")}</div>
-      ${actions.length ? `<div class="itin-actions btn-row">${actions.join("")}</div>` : ""}
+      <div class="itin-tags">${tags.filter(Boolean).join(" ")}</div>
+      ${actions ? `<div class="itin-actions">${actions}</div>` : ""}
     </article>`;
+  }
+
+  function itinRowHtml(entry) {
+    const deals =
+      entry.date && entry.show ? dealsForDayHtml(entry.show, entry.date) : "";
+    const notes = entry.booking?.notes
+      ? ` · ${escapeHtml(entry.booking.notes)}`
+      : "";
+    return `<tr${entry.past ? ' class="past-row"' : ""}>
+      <td class="dates">${escapeHtml(entry.time || "—")}</td>
+      <td>${titleHtml(entry.show, entry.title)}${scoreChip(entry.title)}<div class="dates">${escapeHtml(entry.venue || "")}${notes}</div></td>
+      <td>${entryStatusHtml(entry) || "—"}</td>
+      <td class="deals">${deals || "—"}</td>
+      <td>${entryActionsHtml(entry)}</td>
+    </tr>`;
   }
 
   function renderItinerary() {
@@ -1319,7 +1345,21 @@
         .map(
           ([date, entries]) => `<section class="day-group">
             <h3>${escapeHtml(date ? dayHeading(date) : "No date")}</h3>
-            ${entries.map(itinCardHtml).join("")}
+            <div class="mobile-cards">${entries.map(itinCardHtml).join("")}</div>
+            <div class="table-wrap desktop-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Time</th>
+                    <th>Show</th>
+                    <th>Status that day</th>
+                    <th>Deals</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>${entries.map(itinRowHtml).join("")}</tbody>
+              </table>
+            </div>
           </section>`,
         )
         .join("");
@@ -1365,39 +1405,64 @@
       return;
     }
     const sorted = [...extras].sort((a, b) => (b.score || 0) - (a.score || 0));
-    host.innerHTML = sorted
-      .map((w) => {
-        const show = findShow(w.matched_show_title || w.title);
-        const tags = [];
-        if (w.score != null) {
-          tags.push(`<span class="pill score">★ ${escapeHtml(w.score)}</span>`);
-        }
-        if (show) {
-          const chips = remainingByDayHtml(show);
-          tags.push(chips === "—" ? pill("unknown") : chips);
-        } else {
-          tags.push(`<span class="pill unknown">no match</span>`);
-        }
-        const actions = [];
-        const url = show?.url || w.url || "";
-        if (url) {
-          actions.push(`<a class="btn-link" href="${escapeAttr(url)}" target="_blank" rel="noopener">Tickets</a>`);
-        }
-        if (show) {
-          actions.push(
-            `<button type="button" class="btn-link" data-book-show="${escapeAttr(show.slug || show.show_title)}">Book</button>`,
-            `<button type="button" class="btn-link" data-monitor-show="${escapeAttr(show.slug || show.show_title)}">Monitor</button>`,
-          );
-        }
-        return `<article class="itin-card">
-          <div class="itin-time">★</div>
-          <div class="itin-title">${titleHtml(show, w.title)}</div>
-          <div class="itin-venue">${escapeHtml(w.venue || show?.venue || "")}</div>
-          <div class="itin-tags">${tags.join(" ")}</div>
-          ${actions.length ? `<div class="itin-actions btn-row">${actions.join("")}</div>` : ""}
-        </article>`;
-      })
-      .join("");
+    const items = sorted.map((w) => {
+      const show = findShow(w.matched_show_title || w.title);
+      const scorePill =
+        w.score != null ? `<span class="pill score">★ ${escapeHtml(w.score)}</span>` : "";
+      const availability = show
+        ? remainingByDayHtml(show) === "—"
+          ? pill("unknown")
+          : remainingByDayHtml(show)
+        : `<span class="pill unknown">no match</span>`;
+      const actions = [];
+      const url = show?.url || w.url || "";
+      if (url) {
+        actions.push(`<a class="btn-link" href="${escapeAttr(url)}" target="_blank" rel="noopener">Tickets</a>`);
+      }
+      if (show) {
+        actions.push(
+          `<button type="button" class="btn-link" data-book-show="${escapeAttr(show.slug || show.show_title)}">Book</button>`,
+          `<button type="button" class="btn-link" data-monitor-show="${escapeAttr(show.slug || show.show_title)}">Monitor</button>`,
+        );
+      }
+      const actionsHtml = actions.length ? `<div class="btn-row">${actions.join("")}</div>` : "";
+      return { w, show, scorePill, availability, actionsHtml };
+    });
+
+    host.innerHTML = `
+      <div class="mobile-cards">${items
+        .map(
+          ({ w, show, scorePill, availability, actionsHtml }) => `<article class="itin-card">
+            <div class="itin-time">★</div>
+            <div class="itin-title">${titleHtml(show, w.title)}</div>
+            <div class="itin-venue">${escapeHtml(w.venue || show?.venue || "")}</div>
+            <div class="itin-tags">${[scorePill, availability].filter(Boolean).join(" ")}</div>
+            ${actionsHtml ? `<div class="itin-actions">${actionsHtml}</div>` : ""}
+          </article>`,
+        )
+        .join("")}</div>
+      <div class="table-wrap desktop-table">
+        <table>
+          <thead>
+            <tr>
+              <th>Score</th>
+              <th>Show</th>
+              <th>Availability</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>${items
+            .map(
+              ({ w, show, scorePill, availability, actionsHtml }) => `<tr>
+                <td>${scorePill || "—"}</td>
+                <td>${titleHtml(show, w.title)}<div class="dates">${escapeHtml(w.venue || show?.venue || "")}</div></td>
+                <td class="remaining">${availability}</td>
+                <td>${actionsHtml}</td>
+              </tr>`,
+            )
+            .join("")}</tbody>
+        </table>
+      </div>`;
     section.hidden = false;
   }
 
