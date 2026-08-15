@@ -4,6 +4,8 @@ import asyncio
 import csv
 import io
 import json
+import random
+import time
 from datetime import date
 from typing import Any
 
@@ -76,7 +78,7 @@ def _write_performances_csv(rows: list[PerformanceRow]) -> str:
     return buf.getvalue()
 
 
-async def run_full_scan() -> dict[str, Any]:
+async def run_full_scan(*, deadline: float | None = None) -> dict[str, Any]:
     config = get_config()
     start = date.fromisoformat(config["start_date"])
     end = date.fromisoformat(config["end_date"])
@@ -94,12 +96,17 @@ async def run_full_scan() -> dict[str, Any]:
         await api.authenticate()
         events = await fetch_all_programme(api, page_size=500)
         candidates = collect_window_rows(events, start, end)
+        # Check in random order: if the deadline truncates the run, a
+        # different slice goes unchecked each day instead of always the
+        # same alphabetical tail. Output ordering is re-sorted downstream.
+        random.shuffle(candidates)
         print(f"Classifying {len(candidates)} performances…", flush=True)
         classified = await enrich_with_prices(
             api,
             candidates,
             concurrency=25,
             nearly_threshold=nearly,
+            deadline=deadline,
         )
         offers_meta = await fetch_and_attach_edfest_offers(
             client,
@@ -185,4 +192,10 @@ async def run_full_scan() -> dict[str, Any]:
 
 
 def handler(event: dict[str, Any] | None, context: Any) -> dict[str, Any]:
-    return asyncio.run(run_full_scan())
+    # Stop price lookups ~2 min before the Lambda timeout so the scan always
+    # publishes to S3 (a partially-priced snapshot beats a hard kill that
+    # leaves the frontend on stale data).
+    deadline = None
+    if context is not None and hasattr(context, "get_remaining_time_in_millis"):
+        deadline = time.time() + context.get_remaining_time_in_millis() / 1000 - 120
+    return asyncio.run(run_full_scan(deadline=deadline))

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from datetime import date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -222,34 +223,52 @@ async def enrich_with_prices(
     *,
     concurrency: int = 25,
     nearly_threshold: int = 20,
+    deadline: float | None = None,
 ) -> list[PerformanceRow]:
-    """Classify every row; always keep it (sold_out / nearly / available)."""
+    """Classify every row; always keep it (sold_out / nearly / available).
+
+    `deadline` is an absolute time.time() epoch. Once passed, remaining rows
+    are not price-checked: they get the listing-only fallback label and
+    `unchecked=True`, so the run always finishes inside its Lambda budget
+    instead of being hard-killed (which leaks the watchlist lock and writes
+    nothing to S3). Rows whose lookup fails are marked `unchecked` too —
+    alert logic must not treat either as a real reopen.
+    """
     sem = asyncio.Semaphore(concurrency)
     done = 0
+    failed = 0
+    skipped = 0
     total = len(rows)
     lock = asyncio.Lock()
 
-    async def one(row: PerformanceRow) -> None:
+    async def tick() -> None:
         nonlocal done
+        async with lock:
+            done += 1
+            if done % 200 == 0 or done == total:
+                print(f"  checked availability {done}/{total}", flush=True)
+
+    async def one(row: PerformanceRow) -> None:
+        nonlocal failed, skipped
         if row.sold_out_flag or row.ticket_status in SOLD_OUT_STATUSES:
             if row.ticket_status in SOLD_OUT_STATUSES and row.percent_remaining is None:
                 row.percent_remaining = 0
             row.availability = "sold_out"
-            async with lock:
-                done += 1
-                if done % 200 == 0 or done == total:
-                    print(f"  checked availability {done}/{total}", flush=True)
+            await tick()
             return
 
         if not row.box_office_id:
             row.availability = "available"
-            async with lock:
-                done += 1
-                if done % 200 == 0 or done == total:
-                    print(f"  checked availability {done}/{total}", flush=True)
+            await tick()
             return
 
         async with sem:
+            if deadline is not None and time.time() >= deadline:
+                row.availability = "available"
+                row.unchecked = True
+                skipped += 1
+                await tick()
+                return
             try:
                 data = await api.graphql(
                     PRICES_QUERY, {"performanceId": row.box_office_id}
@@ -257,10 +276,9 @@ async def enrich_with_prices(
             except Exception as exc:  # noqa: BLE001
                 print(f"  warn: prices failed for {row.box_office_id}: {exc}", flush=True)
                 row.availability = "available"
-                async with lock:
-                    done += 1
-                    if done % 200 == 0 or done == total:
-                        print(f"  checked availability {done}/{total}", flush=True)
+                row.unchecked = True
+                failed += 1
+                await tick()
                 return
 
             result = (data["performancePrices"].get("result") or {})
@@ -274,12 +292,15 @@ async def enrich_with_prices(
                 nearly_threshold=nearly_threshold,
             )
 
-        async with lock:
-            done += 1
-            if done % 200 == 0 or done == total:
-                print(f"  checked availability {done}/{total}", flush=True)
+        await tick()
 
     await asyncio.gather(*(one(r) for r in rows))
+    if failed or skipped:
+        print(
+            f"  availability check degraded: {failed} lookups failed, "
+            f"{skipped} skipped past deadline (of {total})",
+            flush=True,
+        )
     return rows
 
 

@@ -164,5 +164,9 @@ class FringeClient:
             except (httpx.TransportError, httpx.TimeoutException, OSError) as exc:
                 last_exc = exc
                 await asyncio.sleep(0.4 * (2**attempt))
-        assert last_exc is not None
-        raise last_exc
+        if last_exc is not None:
+            raise last_exc
+        # Every attempt got a 429 — surface that instead of a bare AssertionError.
+        raise RuntimeError(
+            f"rate limited (429) on all {self._max_retries} attempts"
+        )

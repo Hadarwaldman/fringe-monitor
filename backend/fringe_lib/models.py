@@ -21,6 +21,10 @@ class PerformanceRow:
     percent_remaining: int | None = None
     availability_level: str | None = None
     availability: str = ""
+    # True when availability is a fallback (price lookup failed or the run's
+    # deadline hit), not a real classification. Consumers that alert on
+    # transitions must ignore unchecked rows.
+    unchecked: bool = False
     url: str = ""
     price_types: list[str] | None = None
     offers: list[dict[str, str]] | None = None
