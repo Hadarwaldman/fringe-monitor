@@ -411,7 +411,7 @@ def watch_candidates_from_shows(shows: list[dict[str, Any]]) -> list[dict[str, A
                         "date": perf["date"],
                         "time": perf["time"],
                         "availability": perf["availability"],
-                        "url": show.get("url") or perf.get("url") or "",
+                        "url": show.get("url") or "",
                         "source": "auto",
                     }
                 )

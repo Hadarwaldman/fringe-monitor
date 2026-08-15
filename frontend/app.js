@@ -26,6 +26,7 @@
     view: { start: "", end: "" },
     itinFilter: "all",
     showsLimit: 100,
+    loaded: false,
   };
 
   const COMMON_DEALS = [
@@ -1074,6 +1075,7 @@
     const res = await fetch(`/data/latest.json?ts=${Date.now()}`, { cache: "no-store" });
     if (!res.ok) throw new Error(`latest.json HTTP ${res.status}`);
     const data = await res.json();
+    state.loaded = true;
     state.shows = data.shows || [];
     state.scanWindow = { start: data.start_date || "", end: data.end_date || "" };
     const meta = $("meta");
@@ -1508,8 +1510,9 @@
 
     const summary = $("shows-summary");
     if (summary) {
-      summary.textContent =
-        rows.length > visible.length
+      summary.textContent = !state.loaded
+        ? "Loading shows…"
+        : rows.length > visible.length
           ? `Showing ${visible.length} of ${rows.length} shows`
           : `${rows.length} show${rows.length === 1 ? "" : "s"}`;
     }
@@ -2005,6 +2008,11 @@
     $("view-end").value = state.view.end;
   }
 
+  // Paint what we already have (schedule + bookings live in localStorage)
+  // before waiting on the network, so the page is never blank while
+  // latest.json is in flight.
+  renderAll();
+
   const loads = [loadConfig(), loadLatest()];
   if (page === "show") loads.push(loadDetails());
   Promise.all(loads)
@@ -2018,6 +2026,8 @@
           $("view-start").value = state.view.start;
           $("view-end").value = state.view.end;
         }
+        // The window just moved, so the render loadLatest() did is stale.
+        renderAll();
       }
       return loadPlanner();
     })

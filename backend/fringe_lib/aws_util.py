@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gzip
 import json
 import os
 from decimal import Decimal
@@ -42,11 +43,21 @@ def ses_client():
 
 
 def put_json_s3(bucket: str, key: str, payload: dict[str, Any]) -> None:
+    """Write JSON to S3 gzipped.
+
+    latest.json runs to tens of MB uncompressed, and CloudFront only
+    auto-compresses objects up to 10 MB — past that it silently serves them
+    raw, which stalls the browser on mobile. Storing the object already
+    encoded takes compression off CloudFront's hands entirely (it passes a
+    pre-encoded body straight through), and browsers decode it transparently.
+    """
+    body = json.dumps(payload, default=_json_default).encode("utf-8")
     s3_client().put_object(
         Bucket=bucket,
         Key=key,
-        Body=json.dumps(payload, default=_json_default).encode("utf-8"),
+        Body=gzip.compress(body),
         ContentType="application/json",
+        ContentEncoding="gzip",
         CacheControl="no-cache",
     )
 
@@ -60,7 +71,13 @@ def get_json_s3(bucket: str, key: str) -> dict[str, Any] | None:
         if "NoSuchKey" in type(exc).__name__ or "NoSuchKey" in str(exc):
             return None
         raise
-    return json.loads(obj["Body"].read().decode("utf-8"))
+    raw = obj["Body"].read()
+    # Objects written before the gzip switch — and the Terraform seed
+    # latest.json/config.json — are still plain, so sniff the magic number
+    # rather than trusting ContentEncoding.
+    if raw[:2] == b"\x1f\x8b":
+        raw = gzip.decompress(raw)
+    return json.loads(raw.decode("utf-8"))
 
 
 def get_config(table=None) -> dict[str, Any]:

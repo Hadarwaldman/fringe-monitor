@@ -63,12 +63,12 @@ class PerformanceRow:
             }
             for o in (self.offers or [])
         ]
+        # show_title / slug / genre / venue / url are deliberately absent:
+        # every performance is nested under its show in latest.json, which
+        # already carries all five. Repeating them per performance was ~40%
+        # of the payload.
         return {
             "performance_id": self.performance_id,
-            "show_title": self.show_title,
-            "slug": self.slug,
-            "genre": self.genre,
-            "venue": self.venue,
             "date": self.date_local,
             "time": self.time_local,
             "datetime_utc": self.datetime_utc,
@@ -77,6 +77,5 @@ class PerformanceRow:
             "percent_remaining": self.percent_remaining,
             "availability_level": self.availability_level,
             "box_office_id": self.box_office_id,
-            "url": self.url,
             "offers": offers,
         }
