@@ -4,7 +4,6 @@
   const state = {
     shows: [],
     monitors: [],
-    credsConfigured: true,
     scanWindow: { start: "2026-08-01", end: "2026-08-31" },
   };
 
@@ -89,7 +88,6 @@
   async function loadMonitors() {
     const data = await api("/monitors");
     state.monitors = data.items || [];
-    state.credsConfigured = Boolean(data.hold_credentials_configured);
     render();
   }
 
@@ -127,29 +125,10 @@
     return bits.join(" ") || `<span class="status">No performances in range</span>`;
   }
 
-  function holdInfo(monitor) {
-    let holds = {};
-    try {
-      holds = JSON.parse(monitor.holds_json || "{}");
-    } catch (_) {
-      /* ignore */
-    }
-    const entries = Object.values(holds).sort((a, b) =>
-      String(b.at || "").localeCompare(String(a.at || "")),
-    );
-    const parts = [];
-    if (monitor.last_alert_at) {
-      parts.push(`Alerted ${shortDateTime(monitor.last_alert_at)}`);
-    }
-    if (entries.length) {
-      const h = entries[0];
-      parts.push(
-        h.success
-          ? `Held ${h.quantity}× ${shortDate(h.date)} ${h.time || ""} (${shortDateTime(h.at)})`
-          : `Hold failed: ${h.error || "unknown"}`,
-      );
-    }
-    return parts.length ? parts.join("<br/>") : "—";
+  function alertInfo(monitor) {
+    return monitor.last_alert_at
+      ? `Alerted ${shortDateTime(monitor.last_alert_at)}`
+      : "—";
   }
 
   function render() {
@@ -157,10 +136,7 @@
     const tbody = table.querySelector("tbody");
     const meta = $("monitor-meta");
     const active = state.monitors.filter((m) => m.active !== false).length;
-    meta.textContent = `${state.monitors.length} monitor${state.monitors.length === 1 ? "" : "s"} · ${active} active · checks every 15 minutes`;
-
-    const holdWanted = state.monitors.some((m) => m.hold_tickets);
-    $("creds-banner").hidden = !holdWanted || state.credsConfigured;
+    meta.textContent = `${state.monitors.length} monitor${state.monitors.length === 1 ? "" : "s"} · ${active} active · checks every 3 minutes`;
 
     if (!state.monitors.length) {
       table.hidden = true;
@@ -171,9 +147,6 @@
     tbody.innerHTML = state.monitors
       .map((m) => {
         const paused = m.active === false;
-        const holdBadge = m.hold_tickets
-          ? `<span class="pill available" title="Will hold tickets in your edfringe basket">hold</span>`
-          : `<span class="pill unknown">email only</span>`;
         const show = findShow(m.slug) || findShow(m.show_title);
         const titleHtml = show?.slug
           ? `<a class="show-title-link" href="./show.html?slug=${encodeURIComponent(show.slug)}">${escapeHtml(m.show_title)}</a>`
@@ -184,11 +157,10 @@
             ${paused ? ` <span class="pill unknown">paused</span>` : ""}
             <div class="dates">${m.url ? `<a href="${escapeAttr(m.url)}" target="_blank" rel="noopener">Ticket page</a>` : ""}</div>
           </td>
-          <td data-th="Date range" class="dates">${escapeHtml(shortDate(m.start_date))} → ${escapeHtml(shortDate(m.end_date))} · ${escapeHtml(String(m.quantity || 1))} ticket${(m.quantity || 1) === 1 ? "" : "s"}</td>
-          <td data-th="Hold">${holdBadge}</td>
+          <td data-th="Date range" class="dates">${escapeHtml(shortDate(m.start_date))} → ${escapeHtml(shortDate(m.end_date))}</td>
           <td data-th="Availability" class="remaining">${statusChips(m)}</td>
           <td data-th="Last check" class="dates">${escapeHtml(shortDateTime(m.last_checked_at))}</td>
-          <td data-th="Last alert / hold" class="dates">${holdInfo(m)}</td>
+          <td data-th="Last alert" class="dates">${alertInfo(m)}</td>
           <td><div class="btn-row">
             <button type="button" class="btn-link" data-monitor-toggle="${escapeAttr(m.monitor_id)}">${paused ? "Resume" : "Pause"}</button>
             <button type="button" class="btn-link danger" data-monitor-delete="${escapeAttr(m.monitor_id)}">Remove</button>
@@ -235,12 +207,10 @@
           url: show.url || "",
           start_date: start,
           end_date: end,
-          quantity: Number($("monitor-qty").value || 1),
-          hold_tickets: $("monitor-hold").checked,
           performances: performancesInRange(show, start, end),
         }),
       });
-      status.textContent = `Monitoring ${show.show_title}. First check within 15 minutes — use “Check now” to run one immediately.`;
+      status.textContent = `Monitoring ${show.show_title}. First check within 3 minutes — use “Check now” to run one immediately.`;
       $("monitor-show").value = "";
       await loadMonitors();
     } catch (err) {

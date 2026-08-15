@@ -82,33 +82,23 @@ First production scan (12–20 Aug window): ~3007 shows, ~19.5k performances cla
 - If status moves `sold_out`/`nearly_sold_out` → `available`, sends SES email to `notify_email` and records alert state so you are not spammed every cycle
 - Also runs **show monitors** (see below) against the same programme snapshot
 
-### Show monitors (+ optional basket hold)
+### Show monitors
 
-A monitor targets **one show over a date range** (created on `monitors.html`).
-Every 15 minutes the watchlist lambda re-classifies that show's performances in
-the range and, when any becomes buyable (`available` or `nearly_sold_out`),
-emails `notify_email`. Each performance alerts once per transition into
-buyable; the flag resets if it sells out again.
+A monitor targets **one show over a date range** (created on `monitors.html`,
+or via the **Monitor** button on any show list). A dedicated lightweight
+`monitor-check` lambda runs **every 3 minutes** and, for each monitor, queries
+availability for just that monitor's stored performances (no full programme
+fetch — cheap enough to run frequently). When any performance becomes buyable
+(`available` or `nearly_sold_out`), it emails `notify_email` with a book-now
+link. Each performance alerts once per transition into buyable; the flag resets
+if it sells out again.
 
-If the monitor has **hold tickets** enabled, the lambda logs into your
-edfringe account and adds the configured quantity of full-price tickets for
-the earliest newly-opened performance to your basket. edfringe holds basket
-items for ~30 minutes — the alert email tells you to log in and complete the
-purchase before it expires. Only one performance is held per opening, and a
-hold is never re-attempted on subsequent checks (no inventory hoarding).
-
-One-time setup for holds (credentials stay only in SSM, never in the repo,
-Terraform state, or DynamoDB):
-
-```bash
-AWS_PROFILE=hadar-pc aws ssm put-parameter \
-  --name /fringe-monitor/edfringe-credentials \
-  --type SecureString \
-  --value '{"email":"you@example.com","password":"..."}'
-```
-
-Without the parameter, monitors still email — holds are skipped with a note in
-the email.
+**Notifications only — there is no auto-hold.** An earlier version tried to log
+into an edfringe account and add tickets to the basket, but nearly all Fringe
+performances use "GD" (guest/gate-door) allocation: the ticketing API reports
+availability for these but exposes **no addable price bands**, so the basket
+`addTickets` call has nothing to operate on. The reliable (and, for these
+shows, only) path is the alert + manual booking via the emailed link.
 
 ### Egress proxy (required for AWS scans)
 
@@ -140,9 +130,9 @@ HTTP API Gateway → Lambda.
 | `PUT` | `/config` | Update `start_date`, `end_date`, `nearly_threshold`, etc. |
 | `GET` | `/watchlist` | List watched performances |
 | `PUT`/`POST` | `/watchlist` | Upsert watch items (`source: manual` by default) |
-| `GET` | `/monitors` | List show monitors (+ whether hold credentials are configured) |
-| `POST` | `/monitors` | Create a monitor (`slug`, `show_title`, `start_date`, `end_date`, `quantity`, `hold_tickets`) |
-| `PUT` | `/monitors/{id}` | Update dates/quantity/`hold_tickets`/`active` |
+| `GET` | `/monitors` | List show monitors |
+| `POST` | `/monitors` | Create a monitor (`slug`, `show_title`, `start_date`, `end_date`, `performances`) |
+| `PUT` | `/monitors/{id}` | Update `start_date`/`end_date`/`active` |
 | `DELETE` | `/monitors/{id}` | Remove a monitor |
 | `POST` | `/monitors/check` | Run the 15-minute check immediately (async) |
 
@@ -194,7 +184,7 @@ Table: `fringe-monitor` (pay-per-request), keys `pk` + `sk`.
 | `CONFIG` | `MAIN` | `start_date`, `end_date`, `nearly_threshold`, `notify_email`, `auto_watch_sold_out` |
 | `WATCHLIST` | `{performance_id}` | Show/perf metadata + last known `availability` + `source` (`auto`/`manual`) |
 | `ALERT` | `{performance_id}` | Dedupe for reopen emails |
-| `MONITOR` | `{monitor_id}` | Show monitor: slug, date range, quantity, `hold_tickets`, alert memory, hold results |
+| `MONITOR` | `{monitor_id}` | Show monitor: slug, date range, seeded `performances` (box-office IDs), alert memory |
 
 ---
 

@@ -19,19 +19,11 @@
       <header class="page-head">
         <h1>Monitors</h1>
         <p class="lede">
-          Watch a show and get emailed the moment tickets appear. Every 15
-          minutes each monitor re-checks live availability; optionally it can
-          also hold tickets in your edfringe basket (~30 minutes to complete
-          the purchase).
+          Watch a show and get emailed the moment tickets appear. Each monitor
+          re-checks live availability every 3 minutes.
         </p>
         <div class="meta" id="monitor-meta">Loading monitors…</div>
       </header>
-
-      <div id="creds-banner" class="creds-banner" hidden>
-        ⚠️ Ticket holds are enabled on a monitor, but edfringe credentials are not
-        configured on the server — alerts will still be emailed, holds will be
-        skipped. See the README for the one-time <code>aws ssm put-parameter</code> setup.
-      </div>
 
       <section class="panel" aria-labelledby="add-monitor-heading">
         <div class="panel-head">
@@ -62,14 +54,6 @@
             To
             <input type="date" id="monitor-end" required />
           </label>
-          <label>
-            Tickets
-            <input type="number" id="monitor-qty" min="1" max="6" value="2" />
-          </label>
-          <label class="hold-check">
-            <input type="checkbox" id="monitor-hold" />
-            Hold tickets in basket when they open
-          </label>
           <button type="submit">Start monitoring</button>
           <span id="monitor-form-status" class="status" role="status"></span>
         </form>
@@ -81,8 +65,8 @@
             <div>
               <h2 id="monitors-heading">Your monitors</h2>
               <p>
-                Status refreshes on each 15-minute check. “Check now” runs one
-                immediately (~1–2 minutes).
+                Status refreshes on each 3-minute check. “Check now” runs one
+                immediately (~1 minute).
               </p>
             </div>
             <button type="button" id="check-now-btn" class="btn-secondary">Check now</button>
@@ -95,10 +79,9 @@
               <tr>
                 <th>Show</th>
                 <th>Date range</th>
-                <th>Hold</th>
                 <th>Availability</th>
                 <th>Last check</th>
-                <th>Last alert / hold</th>
+                <th>Last alert</th>
                 <th></th>
               </tr>
             </thead>
