@@ -570,11 +570,22 @@
     unknown: { bg: [236, 231, 220], fg: [92, 86, 76] },
   };
 
-  function formatRemaining(perf) {
-    if (!perf) return "—";
-    if (perf.availability === "sold_out") return "0%";
-    if (perf.percent_remaining == null || perf.percent_remaining === "") return "—";
-    return `${perf.percent_remaining}%`;
+  /* Percentages are shown to the user as capacity SOLD, not capacity left:
+   * "97%" means 97% gone, 3% still available. The scan payload stores
+   * `percent_remaining` (the edfringe API's performancePercentageRemaining —
+   * verified against the API's own availability_level: `limited` rows have a
+   * median of 3, `high` rows a median of 66), so the flip happens here at the
+   * display boundary and nowhere else. Everything below that reasons about
+   * scarcity — classification, colors, filters — deliberately stays in
+   * remaining terms. */
+  function soldPercent(perf) {
+    const rem = remainingPercent(perf);
+    return rem == null ? null : 100 - rem;
+  }
+
+  function formatSold(perf) {
+    const sold = soldPercent(perf);
+    return sold == null ? "—" : `${sold}%`;
   }
 
   function remainingPercent(perf) {
@@ -602,9 +613,10 @@
     return values.reduce((sum, n) => sum + n, 0) / values.length;
   }
 
-  function formatAvgRemaining(avg) {
-    if (avg == null) return "—";
-    return `${Math.round(avg)}%`;
+  /** Takes an average of *remaining* and renders it as sold. */
+  function formatAvgSold(avgRemaining) {
+    if (avgRemaining == null) return "—";
+    return `${Math.round(100 - avgRemaining)}%`;
   }
 
   function rgbCss(rgb) {
@@ -642,9 +654,9 @@
     return m ? m[1] : t;
   }
 
-  function perfRemChipHtml(show, p, { showDate = false } = {}) {
+  function perfSoldChipHtml(show, p, { showDate = false } = {}) {
     const status = p.availability || "unknown";
-    const rem = formatRemaining(p);
+    const rem = formatSold(p);
     const time = formatPerfTime(p.time);
     const tip = [p.date, time || p.time || ""].filter(Boolean).join(" · ");
     const head = showDate
@@ -653,15 +665,15 @@
     return remChipHtml({ status, label: head, tip });
   }
 
-  function remainingForDay(show, dateStr) {
+  function soldForDay(show, dateStr) {
     if (!show || !dateStr) return "—";
     const perfs = (show.performances || []).filter((p) => p.date === dateStr);
     if (!perfs.length) return "—";
-    if (perfs.length === 1) return formatRemaining(perfs[0]);
-    return formatAvgRemaining(averageRemaining(perfs));
+    if (perfs.length === 1) return formatSold(perfs[0]);
+    return formatAvgSold(averageRemaining(perfs));
   }
 
-  function remainingByDayHtml(show) {
+  function soldByDayHtml(show) {
     const perfs = (show.performances || [])
       .filter((p) => inView(p.date))
       .slice()
@@ -681,13 +693,13 @@
     return [...byDate.entries()]
       .map(([date, dayPerfs]) => {
         if (dayPerfs.length === 1) {
-          return perfRemChipHtml(show, dayPerfs[0], { showDate: true });
+          return perfSoldChipHtml(show, dayPerfs[0], { showDate: true });
         }
 
         const avg = averageRemaining(dayPerfs);
-        const rem = formatAvgRemaining(avg);
+        const rem = formatAvgSold(avg);
         const colors = averageRemColors(dayPerfs);
-        const tip = [date, `${dayPerfs.length} performances`, `avg ${rem}`]
+        const tip = [date, `${dayPerfs.length} performances`, `avg ${rem} sold`]
           .filter(Boolean)
           .join(" · ");
         const uniqueTimes = [
@@ -697,7 +709,7 @@
           uniqueTimes.length === 1 ? uniqueTimes[0] : "multiple";
         const style = `background:${rgbCss(colors.bg)};color:${rgbCss(colors.fg)}`;
         const kids = dayPerfs
-          .map((p) => perfRemChipHtml(show, p))
+          .map((p) => perfSoldChipHtml(show, p))
           .join("");
         return `<details class="rem-group">
           <summary class="rem rem-avg" title="${escapeAttr(tip)}" style="${escapeAttr(style)}">${escapeHtml(shortDate(date))} ${escapeHtml(timeLabel)} ${escapeHtml(rem)}<span class="rem-count">×${dayPerfs.length}</span></summary>
@@ -1258,19 +1270,19 @@
       bits.push(`<span class="pill booked" title="${escapeAttr(tip)}">✓ booked</span>${price}`);
     }
     if (entry.date && entry.show) {
-      const rem = remainingForDay(entry.show, entry.date);
+      const sold = soldForDay(entry.show, entry.date);
       const statusLabel =
         entry.status === "sold_out"
           ? "sold out"
           : entry.status === "nearly_sold_out"
-            ? `${rem} left`
+            ? `${sold} sold`
             : entry.status === "available"
-              ? rem !== "—"
-                ? `${rem} left`
+              ? sold !== "—"
+                ? `${sold} sold`
                 : "on sale"
               : "no data";
       bits.push(
-        `<span class="rem ${entry.status}" title="${escapeAttr(`${entry.date} availability`)}">${escapeHtml(statusLabel)}</span>`,
+        `<span class="rem ${entry.status}" title="${escapeAttr(`${entry.date} — % of capacity sold`)}">${escapeHtml(statusLabel)}</span>`,
       );
     } else if (!entry.show) {
       bits.push(`<span class="pill unknown" title="No match in the latest scan">no match</span>`);
@@ -1430,9 +1442,9 @@
       const scorePill =
         w.score != null ? `<span class="pill score">★ ${escapeHtml(w.score)}</span>` : "";
       const availability = show
-        ? remainingByDayHtml(show) === "—"
+        ? soldByDayHtml(show) === "—"
           ? pill("unknown")
-          : remainingByDayHtml(show)
+          : soldByDayHtml(show)
         : `<span class="pill unknown">no match</span>`;
       const actions = [];
       const url = show?.url || w.url || "";
@@ -1500,7 +1512,7 @@
   /** Performances to re-price: every performance on each upcoming entry's date.
    *
    * Usually exactly one per entry. When a show has two performances that day
-   * we take both rather than guessing by time — `remainingForDay` averages
+   * we take both rather than guessing by time — `soldForDay` averages
    * across the day, so refreshing only one would blend fresh and stale numbers.
    */
   function itineraryLivePerfs() {
@@ -1613,7 +1625,7 @@
         return `<tr>
           <td>${titleHtml(show)}${bookedBadge}${scoreChip(show.show_title)}<div class="dates">${escapeHtml(show.genre || "")}</div></td>
           <td data-th="Venue" class="dates">${escapeHtml(show.venue || "")}</td>
-          <td data-th="Availability" class="remaining">${remainingByDayHtml(show)}</td>
+          <td data-th="Availability" class="remaining">${soldByDayHtml(show)}</td>
           <td data-th="Deals" class="deals">${dealsByDayHtml(show)}</td>
           <td data-th="7d trend" class="trend-cell">${trendHtml(show)}</td>
           <td><div class="btn-row">
@@ -1737,8 +1749,8 @@
     const availabilityHtml = show
       ? `<section class="panel" aria-label="Availability">
           <div class="panel-head"><h2>Availability</h2>
-          <p>Each chip is a scanned date — % is capacity remaining. Tap a stacked chip for individual performances.</p></div>
-          <div class="remaining">${remainingByDayHtml(show)}</div>
+          <p>Each chip is a scanned date — % is capacity sold. Tap a stacked chip for individual performances.</p></div>
+          <div class="remaining">${soldByDayHtml(show)}</div>
           ${dealsByDayHtml(show) !== "—" ? `<div class="deals" style="margin-top:0.75rem">${dealsByDayHtml(show)}</div>` : ""}
           <div style="margin-top:0.75rem">${trendHtml(show)}</div>
           <div class="btn-row" style="margin-top:1rem">
@@ -1815,7 +1827,7 @@
       // Recompute the show's date buckets from refreshed performances.
       recomputeShowDates(show);
       const remaining = document.querySelector('[aria-label="Availability"] .remaining');
-      if (remaining) remaining.innerHTML = remainingByDayHtml(show);
+      if (remaining) remaining.innerHTML = soldByDayHtml(show);
       const checking = document.querySelector(".live-checking");
       if (checking) {
         checking.classList.remove("live-checking");

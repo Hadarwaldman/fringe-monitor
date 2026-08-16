@@ -37,7 +37,8 @@
     const win = UI.readDateWindow(userId, config);
     $("start-date").value = win.start_date;
     $("end-date").value = win.end_date;
-    $("nearly-threshold").value = win.nearly_threshold;
+    // Stored as "remaining ≤ N"; the UI talks in capacity sold everywhere.
+    $("nearly-threshold").value = 100 - Number(win.nearly_threshold ?? 20);
   }
 
   async function loadConfig() {
@@ -66,7 +67,7 @@
     const personal = {
       start_date: $("start-date").value,
       end_date: $("end-date").value,
-      nearly_threshold: Number($("nearly-threshold").value || 20),
+      nearly_threshold: 100 - Number($("nearly-threshold").value || 80),
     };
     if (personal.end_date < personal.start_date) {
       status.textContent = "End date must be on or after start date.";

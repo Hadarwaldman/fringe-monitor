@@ -184,7 +184,7 @@ Static files in S3, served by CloudFront. Four destinations share a nav header
   site opens instantly (and offline) on festival-venue signal
 
 Schedule matching is a case-insensitive show-name normalize; each itinerary
-card shows status and remaining % **on that day**. Booked entries (PlanMyFringe
+card shows status and % sold **on that day**. Booked entries (PlanMyFringe
 confirmed or local bookings with price/deals) render as `✓ booked`.
 
 ### Availability labels
@@ -196,6 +196,16 @@ confirmed or local bookings with price/deals) render as `✓ booked`.
 | `available` | Otherwise |
 
 Same logic as the local CLI (`scan_fringe.py` / `backend/fringe_lib`).
+
+**Percentages: stored as remaining, displayed as sold.** The scan stores
+`percent_remaining` (the API's `performancePercentageRemaining`), and all
+classification, filtering and chip colors reason in those terms. The UI shows
+the complement — `100 - percent_remaining`, labelled *sold* — because "97%
+sold" is the useful reading when you're watching for a sell-out. The flip
+lives only in the frontend display helpers (`soldPercent` / `formatSold` /
+`formatAvgSold` in `app.js`); nothing below that line should ever invert a
+percentage. The settings "Nearly sold-out at ≥ % sold" input converts on read
+and write, so the stored `nearly_threshold` stays a remaining threshold.
 
 ### DynamoDB single-table layout
 
