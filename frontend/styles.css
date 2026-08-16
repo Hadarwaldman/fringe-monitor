@@ -54,13 +54,20 @@ body {
   background: transparent;
 }
 
+/* Full-bleed frosted bar behind the centred header row. The bleed is painted
+   with box-shadow + clip-path, neither of which affects layout — an absolutely
+   positioned `inset: 0 -100vmax` does: its right edge is scrollable overflow,
+   which showed up on phones as ~800px of blank space to the right of every
+   page. Keep any future bleed layout-free for the same reason. */
 .site-header::before {
   content: "";
   position: absolute;
-  inset: 0 -100vmax;
+  inset: 0;
   z-index: -1;
   background: rgba(247, 243, 234, 0.92);
   backdrop-filter: blur(8px);
+  box-shadow: 0 0 0 100vmax rgba(247, 243, 234, 0.92);
+  clip-path: inset(0 -100vmax);
 }
 
 .site-brand {
