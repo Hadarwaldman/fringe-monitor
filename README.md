@@ -74,13 +74,12 @@ cd terraform && AWS_PROFILE=hadar-pc terraform output
 
 First production scan (12–20 Aug window): ~3007 shows, ~19.5k performances classified, ~4 minutes on a 1024 MB Lambda.
 
-### 15‑minute watchlist (`fringe-monitor-watchlist`)
+### Wishlist refresh (`fringe-monitor-wishlist-refresh`)
 
 - Trigger: EventBridge `rate(15 minutes)`
-- Loads watchlist from DynamoDB
-- Re-fetches programme listing, re-classifies **only watched performances**
-- If status moves `sold_out`/`nearly_sold_out` → `available`, sends SES email to `notify_email` and records alert state so you are not spammed every cycle
-- Also runs **show monitors** (see below) against the same programme snapshot
+- Refreshes availability for **only the PlanMyFringe wishlist shows** via direct per-performance price lookups (`availability.classify_box_office_ids`) — **no full programme fetch**
+- Writes fresh sold-out status into `data/planner.json` so the site's wishlist view stays current
+- **Replaced the old whole-programme 15-min watchlist** (`fringe-monitor-watchlist`), which re-scanned ~15,000 auto-added performances every cycle and cost ~50+ GB/month of proxy bandwidth. That lambda still exists but its EventBridge rule is **DISABLED** — do not re-enable it (see Cost notes).
 
 ### Show monitors
 
@@ -385,14 +384,23 @@ Takes effect on the next scan (invoke full-scan to refresh `latest.json` immedia
 
 ## Cost notes
 
-Designed to stay cheap for festival season:
+**AWS is effectively free** — schedule-driven Lambdas (not always-on), DynamoDB on-demand, S3 + CloudFront PriceClass_100, no RDS/ECS/EC2. All within the free tier; a few cents at most.
 
-- Lambdas run on schedules (not always-on)
-- DynamoDB on-demand
-- S3 + CloudFront PriceClass_100
-- No RDS / ECS / EC2
+**The only real cost is the IPRoyal residential proxy** (`FRINGE_PROXY_URL`), billed **per GB**. Every edfringe API call routes through it (required — Cloudflare blocks AWS IPs), so proxy bandwidth = number of edfringe requests. Measured (Aug 2026): token ≈ 1.4 KB, one price lookup ≈ 0.46 KB, a full programme fetch ≈ 27 MB.
 
-Typical spend should be well under a few dollars for August if traffic stays personal-use.
+| Job | Cadence | Proxy/month |
+| --- | --- | --- |
+| Daily full scan | 1×/day | ~0.8 GB |
+| Wishlist refresh (217-show wishlist) | every 15 min | ~2.0 GB |
+| Monitor check | every 3 min | ~0.06 GB |
+| Live search | on demand | negligible |
+| **Total** | | **≈ 2.8 GB/month** |
+
+So **a 2 GB proxy top-up lasts ~3 weeks** at current settings. Wishlist size scales the wishlist-refresh line linearly.
+
+**To reduce proxy cost, slow the wishlist refresh** (`wishlist_refresh_schedule` in `terraform/variables.tf`): every 30 min ≈ 1.85 GB/mo (~4.7 weeks per 2 GB), every 60 min ≈ 1.35 GB/mo (~6.4 weeks).
+
+**⚠️ Do NOT re-enable the old `watchlist-15m` rule** (deliberately `state = "DISABLED"`) or add a full-programme fetch to any frequent job — either would push proxy usage to ~50+ GB/month (~$100+). Frequent jobs must use targeted `availability.classify_box_office_ids` lookups only.
 
 ---
 
