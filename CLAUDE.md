@@ -158,6 +158,27 @@ Auth is **GitHub OIDC — no static keys/secrets stored.** The workflow assumes 
 ### Terraform state (important)
 Remote S3 backend: bucket `fringe-monitor-tfstate-152930225704`, key `fringe-monitor/terraform.tfstate`, native S3 locking. Local and CI **share this state** — never init a second empty state or you'll duplicate the stack. `terraform/terraform.tfvars` is gitignored (copy from `terraform.tfvars.example`).
 
+### ⚠️ The seed S3 objects must keep `ignore_changes = all`
+
+`aws_s3_object.seed_latest` / `seed_config` (`terraform/cloudfront.tf`) create the
+first `data/latest.json` / `data/config.json` so the UI has something to read
+before the first scan. **After that, the scan owns those objects and Terraform
+must never touch them again.**
+
+Do not "tighten" this to an explicit attribute list. That was the original
+form, and it omitted `content_encoding`; because `put_json_s3` writes the
+object gzipped, Terraform saw `content_encoding = "gzip" -> null`, planned an
+in-place update, and an update re-uploads the resource's `content` — so a
+routine deploy replaced a 3,050-show payload with the 296-byte "No scan yet"
+placeholder and every page rendered "no match". Ignoring `content` does not
+save you: one non-ignored attribute drags the placeholder content with it.
+
+Recovery if it happens again: the data bucket has versioning enabled, so copy
+the last good version back over the current one
+(`aws s3api list-object-versions --prefix data/latest.json`, then
+`copy_object` with the good `VersionId` and `MetadataDirective=COPY` to keep
+the gzip headers).
+
 Refresh live URLs anytime:
 ```bash
 cd terraform && AWS_PROFILE=hadar-pc terraform output
