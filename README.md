@@ -119,6 +119,20 @@ The local CLI runs from a residential IP, so it leaves `FRINGE_PROXY_URL`
 unset and connects directly. Without the proxy parameter, the daily full scan
 and the 15-minute watchlist/monitor checks all fail with 403.
 
+**Failure modes to recognize in Lambda logs:**
+
+- `403 Forbidden` on `/token` — Cloudflare is blocking the egress IP (proxy
+  missing or its IPs got burned).
+- `ProxyError: 402 Payment Required` — the proxy account is **out of
+  credit**; every scheduled job fails until it's topped up.
+
+While the proxy is down, keep the site's data fresh from a residential IP:
+`python scan_fringe.py` then `scripts/publish_scan.sh` (uploads `output/`'s
+JSON pre-gzipped with the same headers the Lambda writes). Note edfringe also
+rate-limits single residential IPs hard — the CLI's default concurrency can
+trip a long 429 tarpit; `--concurrency 2` and a narrower `--start/--end`
+window is the reliable shape.
+
 ### API (`fringe-monitor-api`)
 
 HTTP API Gateway → Lambda.
@@ -160,6 +174,10 @@ Static files in S3, served by CloudFront. Four destinations share a nav header
 - `/data/details.json` — show descriptions, venue addresses, EdFest links
 - `/data/config.json` — config mirror
 - `config.js` — injects `apiUrl` at deploy time
+- `net.js` — shared data loader: cached-copy-first (Cache API) + background
+  revalidation with retries; stale banner + Retry instead of blank pages
+- `sw.js` — stale-while-revalidate service worker for the app shell, so the
+  site opens instantly (and offline) on festival-venue signal
 
 Schedule matching is a case-insensitive show-name normalize; each itinerary
 card shows status and remaining % **on that day**. Booked entries (PlanMyFringe
@@ -195,6 +213,7 @@ Table: `fringe-monitor` (pay-per-request), keys `pk` + `sk`.
 ├── README.md                 ← this doc
 ├── scan_fringe.py            ← local CLI (uses shared lib)
 ├── requirements.txt
+├── requirements-dev.txt      ← test deps (pytest)
 ├── backend/
 │   ├── fringe_lib/           ← shared scanner + AWS helpers
 │   ├── lambdas/
@@ -203,11 +222,16 @@ Table: `fringe-monitor` (pay-per-request), keys `pk` + `sk`.
 │   │   └── api/              ← HTTP API
 │   └── requirements.txt
 ├── frontend/                 ← CloudFront static site
+│   ├── net.js                ← cached-first /data/* loading (weak-signal)
+│   └── sw.js                 ← offline app-shell service worker
 ├── terraform/                ← AWS infra (S3 backend state)
+├── tests/                    ← offline pytest suite (fixtures, no network)
 ├── scripts/
 │   ├── package_lambda.sh     ← build build/lambda.zip
-│   └── deploy.sh             ← package + apply + sync UI
-└── .github/workflows/deploy.yml
+│   ├── deploy.sh             ← package + apply + sync UI
+│   ├── dev_server.py         ← offline dev server + weak-network simulator
+│   └── publish_scan.sh       ← publish local scan to live bucket (proxy-down fallback)
+└── .github/workflows/deploy.yml   ← tests on every PR; deploy gated on them
 ```
 
 ---

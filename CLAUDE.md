@@ -20,25 +20,34 @@ backend/
     monitors.py         Show monitors: per-show/date-range availability alerts
     planmyfringe.py     PlanMyFringe account sync: login + scrape schedule/wishlist, match to scan
     proxy.py            Loads residential-proxy URL from SSM into FRINGE_PROXY_URL (edfringe egress)
-    availability.py     Cheap targeted availability: classify a specific set of box-office IDs (no programme fetch); used by monitors, wishlist-refresh, live search endpoint
     aws_util.py         boto3 helpers: DynamoDB config/watchlist/monitors, S3 writes (Lambda-only)
   lambdas/
-    full_scan/handler.py     Daily job (EventBridge cron 06:00 UTC): full programme scan for browse-all
+    full_scan/handler.py     Daily job (EventBridge cron 06:00 UTC)
+    watchlist/handler.py     15-min job: watchlist reopen emails (full programme fetch) + monitors
     monitor_check/handler.py 3-min job: lightweight show-monitor check (direct box-office-id price lookups, no programme fetch)
-    wishlist_refresh/handler.py 15-min job: refresh availability for ONLY the PlanMyFringe wishlist shows (cheap per-perf lookups); replaces the old whole-programme watchlist
-    watchlist/handler.py     LEGACY: whole-programme reopen scan; its EventBridge rule is DISABLED (too much proxy bandwidth). Kept for possible re-enable.
-    api/handler.py           HTTP API Gateway backend (/config, /monitors, GET /shows/{slug}/availability live lookup, /health)
+    api/handler.py           HTTP API Gateway backend (/config, /watchlist, /monitors, /health)
   requirements.txt      Lambda runtime deps (httpx)
 frontend/               Static CloudFront site. ui.js renders the shared nav (header + mobile
-                        tab bar) and owns user/date-window localStorage. app.js drives three
-                        pages via <body data-page>: index.html (My Fringe itinerary),
-                        shows.html (programme browser), show.html (show detail). Plus
-                        monitors.html/monitors.js and settings.html/settings.js.
+                        tab bar), owns user/date-window localStorage, and registers sw.js.
+                        net.js (FringeNet) does all /data/*.json loading: cached-copy-first
+                        from the Cache API + network revalidate with retries (weak-signal
+                        resilience). sw.js is a stale-while-revalidate service worker for
+                        the app shell only. app.js drives three pages via <body data-page>:
+                        index.html (My Fringe itinerary), shows.html (programme browser),
+                        show.html (show detail). Plus monitors.html/monitors.js and
+                        settings.html/settings.js.
 terraform/              All AWS infra; remote S3 state
+tests/                  Offline pytest suite (fixtures + fakes; no network, no AWS) —
+                        see "Testing" below
+requirements-dev.txt    Test-only deps (pytest)
 scripts/
   package_lambda.sh     Builds build/lambda.zip
   deploy.sh             Full local deploy: package + terraform apply + sync UI + invalidate
-.github/workflows/deploy.yml   CI deploy on push to main
+  dev_server.py         Offline dev server: real frontend + fixture/local-scan data + API
+                        stubs + weak-network simulation (--latency/--fail-rate/--gzip)
+  publish_scan.sh       Publish a local scan's output/ to the live data bucket (gzipped) —
+                        fallback when the egress proxy is down
+.github/workflows/deploy.yml   CI: offline tests on every PR/push; deploy on main gated on them
 ```
 
 The three Lambdas share one zip (`build/lambda.zip`); each handler is copied to the zip root (`full_scan.py`, `watchlist.py`, `api.py`) alongside `fringe_lib/`.
