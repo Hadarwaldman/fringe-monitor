@@ -16,6 +16,29 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Offline test suite: no AWS credentials, no edfringe access. Runs on every
+  # PR and push; deploy is gated on it.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install deps
+        run: pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Run tests
+        run: pytest tests/ -q
+
+      - name: Frontend JS syntax check
+        run: |
+          for f in frontend/*.js; do node --check "$f"; done
+
   # PRs: validate + terraform plan only. No AWS changes.
   plan:
     if: github.event_name == 'pull_request'
@@ -63,6 +86,7 @@ jobs:
   # main: full deploy to AWS on merge/push or manual dispatch.
   deploy:
     if: github.event_name != 'pull_request'
+    needs: test
     runs-on: ubuntu-latest
     defaults:
       run:

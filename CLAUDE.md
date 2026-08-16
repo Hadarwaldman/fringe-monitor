@@ -56,6 +56,51 @@ python scan_fringe.py          # defaults to 2026-08-12 → 2026-08-20, writes o
 
 `output/` and `.venv/` are gitignored. No AWS credentials are needed for the local CLI.
 
+## Testing (never test against Cloudflare/edfringe)
+
+The edfringe API 403s datacenter IPs and mass-429s bulk lookups, and the live
+site sits behind CloudFront — so **do not verify changes by fetching the live
+site or the edfringe API**. Everything is testable offline:
+
+```bash
+pip install -r requirements-dev.txt
+pytest tests/ -q                       # fringe_lib unit tests — zero network
+for f in frontend/*.js; do node --check "$f"; done   # JS syntax gate
+
+python scripts/dev_server.py           # real frontend + demo data at :8010
+python scripts/dev_server.py --data output          # after a local scan
+python scripts/dev_server.py --latency 3000 --fail-rate 0.4 --gzip
+                                       # simulate weak signal: exercises the
+                                       # cached-first / retry / offline UI
+```
+
+- Tests live in `tests/`; network behavior is covered via `httpx.MockTransport`
+  and `tests/fakes.FakePricesApi` against `tests/fixtures/*.json` (a synthetic
+  GraphQL programme). Extend fixtures rather than recording live responses.
+- The dev server serves the production HTML/JS against fixture data and stubs
+  `/api/*`, so pages can be checked with `curl http://127.0.0.1:8010/…`.
+- CI runs `pytest` + `node --check` on every PR, and the deploy job on `main`
+  is gated on the test job.
+
+## Weak-network frontend rules
+
+The scan payload is large, and the site must work on festival-venue signal:
+
+- All `/data/*.json` loads go through `frontend/net.js` (`FringeNet.loadJson`):
+  cached-copy-first from the Cache API, then network revalidate with retries
+  and generous timeouts. Never `fetch` data JSON directly, never add `?ts=`
+  cache-busters (S3 serves `Cache-Control: no-cache`, so revalidation is a
+  cheap 304), and on failure show the saved copy + a stale banner, not a
+  blank page.
+- `frontend/sw.js` (stale-while-revalidate) keeps the app shell working
+  offline; it deliberately does NOT touch `/data/*`. New static files must be
+  added to its `SHELL` list; new pages must load `net.js` before their page
+  script.
+- `latest.json` performances carry only the fields the frontend uses (see
+  `PerformanceRow.to_public_dict`); don't add fields without weighing payload
+  size, and keep `tests/test_scan.py::test_summarize_and_payload` (the field
+  contract) in sync.
+
 ## Deploy / sync to AWS
 
 Deploys are **not automatic on save** — they happen via the deploy script or CI. Two paths:
@@ -87,7 +132,7 @@ cd terraform && AWS_PROFILE=hadar-pc terraform output
 
 - Full scan writes `s3://<data-bucket>/data/latest.json` (frontend source of truth), `data/details.json` (show descriptions, venue addresses, EdFest ticket links — used only by show.html; the UI degrades gracefully when it's absent), `data/config.json`, and a CSV.
 - Config + watchlist + monitors live in DynamoDB table `fringe-monitor` (single-table: `CONFIG/MAIN`, `WATCHLIST/<perf_id>`, `ALERT/<perf_id>`, `MONITOR/<monitor_id>`).
-- **Egress proxy (required in AWS):** the edfringe API is behind Cloudflare, which 403s AWS datacenter IPs. All Lambda→edfringe traffic must go through a residential proxy. The proxy URL (`http://user:pass@host:port`) lives ONLY in SSM SecureString `/fringe-monitor/proxy-url`; the Lambdas load it into `FRINGE_PROXY_URL` at runtime via `cart.load_proxy_into_env()`, and `client.make_async_client()` routes through it. Locally (residential IP) leave it unset → direct. Without it, the daily scan and monitors both 403.
+- **Egress proxy (required in AWS):** the edfringe API is behind Cloudflare, which 403s AWS datacenter IPs. All Lambda→edfringe traffic must go through a residential proxy. The proxy URL (`http://user:pass@host:port`) lives ONLY in SSM SecureString `/fringe-monitor/proxy-url`; the Lambdas load it into `FRINGE_PROXY_URL` at runtime via `cart.load_proxy_into_env()`, and `client.make_async_client()` routes through it. Locally (residential IP) leave it unset → direct. Without it, the daily scan and monitors both 403. **`ProxyError: 402 Payment Required` in Lambda logs means the proxy account is out of credit** — every scheduled job fails until it's topped up. Stopgap while the proxy is down: run `python scan_fringe.py` from a residential IP, then `scripts/publish_scan.sh` to upload the fresh data (pre-gzipped, same headers as `put_json_s3`) so the site stays current.
 - Monitor check cadence: the lightweight `monitor-check` Lambda runs every 3 min (`rate(3 minutes)`), checking each monitor via direct `performancePrices(box_office_id)` lookups on its stored `performances` (seeded at creation from the frontend's scan data, or self-seeded via one programme fetch on first run). No full programme fetch → cheap enough for frequent runs. The 15-min watchlist job also still checks monitors (it has the programme in hand). Both share the DynamoDB LOCK/WATCHLIST mutex so they never race.
 - Show monitors (monitors.html): one show + date range; the `monitor-check` lambda emails when any performance in range becomes buyable. Notifications only — auto-hold was removed: nearly all Fringe performances use "GD" (guest/gate-door) allocation, for which the ticketing API exposes availability but NO addable price bands, so `addTickets` (the basket-hold path) has nothing to operate on. See the `edfringe-hold-gd-allocation-limitation` memory. Don't reintroduce hold without re-verifying price bands exist.
 - The date window is stored in DynamoDB config; change it via the UI (**Save dates**) or `PUT /config` — takes effect on the next scan.

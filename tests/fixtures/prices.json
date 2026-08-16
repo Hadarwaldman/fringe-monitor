@@ -1,0 +1,20 @@
+{
+  "911:1001": {
+    "performanceId": "911:1001",
+    "performancePercentageRemaining": 80,
+    "performanceAvailabilityLevel": "High",
+    "allocationDetails": null
+  },
+  "911:1002": {
+    "performanceId": "911:1002",
+    "performancePercentageRemaining": 15,
+    "performanceAvailabilityLevel": "Low",
+    "allocationDetails": null
+  },
+  "912:2001": {
+    "performanceId": "912:2001",
+    "performancePercentageRemaining": 55,
+    "performanceAvailabilityLevel": "Medium",
+    "allocationDetails": null
+  }
+}

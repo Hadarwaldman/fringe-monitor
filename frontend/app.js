@@ -27,6 +27,8 @@
     itinFilter: "all",
     showsLimit: 100,
     loaded: false,
+    latestPayload: null,
+    latestStale: false,
   };
 
   const COMMON_DEALS = [
@@ -375,15 +377,12 @@
   }
 
   async function loadPlanner() {
-    try {
-      const res = await fetch(`/data/planner.json?ts=${Date.now()}`, { cache: "no-store" });
-      if (!res.ok) return;
-      state.planner = await res.json();
+    await FringeNet.loadJson("/data/planner.json", (data) => {
+      state.planner = data;
       if (!state.scheduleRows.length) adoptPlannerSchedule();
       renderAll();
-    } catch (_) {
-      /* no planner synced yet */
-    }
+    });
+    /* failure is fine — no planner synced yet, or offline */
   }
 
   function setSyncStatus(message) {
@@ -1071,41 +1070,70 @@
 
   // ------------------------------------------------------------- data loading
 
-  async function loadLatest() {
-    const res = await fetch(`/data/latest.json?ts=${Date.now()}`, { cache: "no-store" });
-    if (!res.ok) throw new Error(`latest.json HTTP ${res.status}`);
-    const data = await res.json();
+  function renderMeta() {
+    const meta = $("meta");
+    if (!meta) return;
+    const data = state.latestPayload;
+    if (!data) return;
+    const counts = data.counts || {};
+    const offerShows = counts.shows_with_offers;
+    meta.textContent = [
+      state.latestStale ? "⚠ offline — showing saved data" : null,
+      data.fetched_at ? `Scanned ${data.fetched_at.slice(0, 16).replace("T", " ")}` : "No scan yet",
+      `${data.show_count || 0} shows`,
+      `${counts.sold_out || 0} sold-out perfs`,
+      offerShows != null ? `${offerShows} with offers` : null,
+      `window ${data.start_date || "?"} → ${data.end_date || "?"}`,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  }
+
+  function applyLatest(data, { fromCache } = {}) {
     state.loaded = true;
+    state.latestPayload = data;
+    state.latestStale = !!fromCache;
     state.shows = data.shows || [];
     state.scanWindow = { start: data.start_date || "", end: data.end_date || "" };
-    const meta = $("meta");
-    if (meta) {
-      const counts = data.counts || {};
-      const offerShows = counts.shows_with_offers;
-      meta.textContent = [
-        data.fetched_at ? `Scanned ${data.fetched_at.slice(0, 16).replace("T", " ")}` : "No scan yet",
-        `${data.show_count || 0} shows`,
-        `${counts.sold_out || 0} sold-out perfs`,
-        offerShows != null ? `${offerShows} with offers` : null,
-        `window ${data.start_date || "?"} → ${data.end_date || "?"}`,
-      ]
-        .filter(Boolean)
-        .join(" · ");
-    }
+    renderMeta();
     populateGenreFilter();
     mergeSeedBookings();
     renderAll();
   }
 
-  async function loadDetails() {
-    try {
-      const res = await fetch(`/data/details.json?ts=${Date.now()}`, { cache: "no-store" });
-      if (!res.ok) return;
-      const data = await res.json();
-      state.details = data.shows || null;
-    } catch (_) {
-      /* details are optional — appear after the next scan with the new code */
+  function renderLoadFailure(error) {
+    const message = `Couldn’t load show data (${(error && error.message) || error || "network error"}).`;
+    const meta = $("meta");
+    if (meta) {
+      meta.innerHTML = `${escapeHtml(message)} <button type="button" class="btn-link" data-retry-load>Retry</button>`;
     }
+    if (page === "show" && !state.shows.length) {
+      const root = $("show-root");
+      if (root) {
+        root.innerHTML = `<p class="status">${escapeHtml(message)} <button type="button" class="btn-link" data-retry-load>Retry</button></p>`;
+      }
+    }
+    if (page === "shows") {
+      const summary = $("shows-summary");
+      if (summary && !state.shows.length) summary.textContent = message;
+    }
+  }
+
+  async function loadLatest() {
+    const result = await FringeNet.loadJson("/data/latest.json", applyLatest, {
+      retries: 2,
+      timeoutMs: 90000,
+    });
+    if (!result.ok) renderLoadFailure(result.error);
+    return result;
+  }
+
+  async function loadDetails() {
+    await FringeNet.loadJson("/data/details.json", (data) => {
+      state.details = data.shows || null;
+      renderAll();
+    });
+    /* details are optional — the page degrades gracefully without them */
   }
 
   function populateGenreFilter() {
@@ -1129,19 +1157,21 @@
     let config = null;
     if (apiBase) {
       try {
-        const res = await fetch(`${apiBase}/config`, { cache: "no-store" });
+        // Short timeout: the static /data/config.json fallback is fine, so
+        // don't hold the page hostage to a slow API round-trip.
+        const res = await FringeNet.fetchWithTimeout(`${apiBase}/config`, {
+          cache: "no-store",
+          timeoutMs: 8000,
+        });
         if (res.ok) config = await res.json();
       } catch (_) {
         /* fall through to static file */
       }
     }
     if (!config) {
-      try {
-        const res = await fetch(`/data/config.json?ts=${Date.now()}`, { cache: "no-store" });
-        if (res.ok) config = await res.json();
-      } catch (_) {
-        /* offline */
-      }
+      await FringeNet.loadJson("/data/config.json", (data) => {
+        config = data;
+      });
     }
     if (config) state.config = config;
   }
@@ -1858,6 +1888,15 @@
     const target = event.target;
     if (!(target instanceof Element)) return;
 
+    const retryLoad = target.closest("[data-retry-load]");
+    if (retryLoad) {
+      const meta = $("meta");
+      if (meta) meta.textContent = "Retrying…";
+      loadLatest();
+      if (page === "show") loadDetails();
+      return;
+    }
+
     const bookShow = target.closest("[data-book-show]");
     if (bookShow) {
       const key = bookShow.getAttribute("data-book-show");
@@ -2015,26 +2054,19 @@
 
   const loads = [loadConfig(), loadLatest()];
   if (page === "show") loads.push(loadDetails());
-  Promise.all(loads)
-    .then(() => {
-      // Config may refine the fallback window (only when the user has no
-      // saved personal window).
-      if (!UI.readSavedDateWindow(state.userId)) {
-        const win = UI.readDateWindow(state.userId, state.config);
-        state.view = { start: win.start_date, end: win.end_date };
-        if (page === "shows") {
-          $("view-start").value = state.view.start;
-          $("view-end").value = state.view.end;
-        }
-        // The window just moved, so the render loadLatest() did is stale.
-        renderAll();
+  Promise.all(loads).then(() => {
+    // Config may refine the fallback window (only when the user has no
+    // saved personal window).
+    if (!UI.readSavedDateWindow(state.userId)) {
+      const win = UI.readDateWindow(state.userId, state.config);
+      state.view = { start: win.start_date, end: win.end_date };
+      if (page === "shows") {
+        $("view-start").value = state.view.start;
+        $("view-end").value = state.view.end;
       }
-      return loadPlanner();
-    })
-    .catch((err) => {
-      const meta = $("meta");
-      if (meta) meta.textContent = `Failed to load data: ${err.message || err}`;
-      const root = $("show-root");
-      if (root) root.innerHTML = `<p class="status">Failed to load data: ${escapeHtml(err.message || String(err))}</p>`;
-    });
+      // The window just moved, so the render loadLatest() did is stale.
+      renderAll();
+    }
+    return loadPlanner();
+  });
 })();
