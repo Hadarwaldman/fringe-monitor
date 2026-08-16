@@ -113,9 +113,10 @@
               : s.availability === "nearly_sold_out"
                 ? "nearly_sold_out"
                 : "available";
-          const rem = s.percent_remaining != null ? ` ${s.percent_remaining}%` : "";
-          const tip = `${s.date} ${s.time} · ${s.availability}${rem}`;
-          return `<span class="rem ${cls}" title="${escapeAttr(tip)}">${escapeHtml(shortDate(s.date))} ${escapeHtml(s.time)}${escapeHtml(rem)}</span>`;
+          // Percentages read as capacity SOLD site-wide; the payload stores remaining.
+          const sold = s.percent_remaining != null ? ` ${100 - s.percent_remaining}%` : "";
+          const tip = `${s.date} ${s.time} · ${s.availability}${sold ? ` ·${sold} sold` : ""}`;
+          return `<span class="rem ${cls}" title="${escapeAttr(tip)}">${escapeHtml(shortDate(s.date))} ${escapeHtml(s.time)}${escapeHtml(sold)}</span>`;
         })
         .join(" ");
     }
