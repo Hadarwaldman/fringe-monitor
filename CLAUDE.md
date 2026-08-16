@@ -17,6 +17,7 @@ backend/
     models.py           PerformanceRow dataclass
     edfest_offers.py    Fetch EdFest/2-for-1 offers, attach to performances
     trend.py            Rolling sell-through history / 7-day sold % averages
+    wishlist_history.py Retained per-performance sell-through series for the wishlist (change-only samples, 30-day retention)
     monitors.py         Show monitors: per-show/date-range availability alerts
     planmyfringe.py     PlanMyFringe account sync: login + scrape schedule/wishlist, match to scan
     proxy.py            Loads residential-proxy URL from SSM into FRINGE_PROXY_URL (edfringe egress)
@@ -25,7 +26,7 @@ backend/
   lambdas/
     full_scan/handler.py     Daily job (EventBridge cron 06:00 UTC): full programme scan for browse-all
     monitor_check/handler.py 3-min job: lightweight show-monitor check (direct box-office-id price lookups, no programme fetch)
-    wishlist_refresh/handler.py 15-min job: refresh availability for ONLY the PlanMyFringe wishlist shows (cheap per-perf lookups); replaces the old whole-programme watchlist
+    wishlist_refresh/handler.py 15-min job: refresh availability for ONLY the PlanMyFringe wishlist shows (cheap per-perf lookups); replaces the old whole-programme watchlist. Persists the readings to planner.json AND appends them to data/wishlist_history.json
     watchlist/handler.py     LEGACY: whole-programme reopen scan; its EventBridge rule is DISABLED (too much proxy bandwidth). Kept for possible re-enable.
     api/handler.py           HTTP API Gateway backend (/config, /monitors, GET /shows/{slug}/availability
                              + POST /availability live lookups, /health)

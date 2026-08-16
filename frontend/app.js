@@ -376,10 +376,42 @@
     saveSchedule();
   }
 
+  /**
+   * Fold the wishlist refresh's readings into the scan data.
+   *
+   * The 15-minute job re-prices every wishlist performance and stores the
+   * result in planner.json; latest.json is only rewritten by the daily scan.
+   * Merging here means wishlist shows render 15-minute-fresh numbers wherever
+   * they appear, without re-downloading the whole programme payload.
+   */
+  function mergePlannerAvailability() {
+    const wishlist = (state.planner && state.planner.wishlist) || [];
+    const touched = new Set();
+    for (const entry of wishlist) {
+      const show = entry.slug ? findShowBySlug(entry.slug) : null;
+      if (!show || !Array.isArray(entry.performances)) continue;
+      const fresh = new Map(
+        entry.performances
+          .filter((p) => p.box_office_id)
+          .map((p) => [String(p.box_office_id), p]),
+      );
+      for (const perf of show.performances || []) {
+        const update = fresh.get(String(perf.box_office_id));
+        if (!update) continue;
+        perf.availability = update.availability;
+        perf.percent_remaining = update.percent_remaining;
+        touched.add(show);
+      }
+    }
+    for (const show of touched) recomputeShowDates(show);
+    return touched.size;
+  }
+
   async function loadPlanner() {
     await FringeNet.loadJson("/data/planner.json", (data) => {
       state.planner = data;
       if (!state.scheduleRows.length) adoptPlannerSchedule();
+      mergePlannerAvailability();
       renderAll();
     });
     /* failure is fine — no planner synced yet, or offline */

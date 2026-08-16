@@ -8,7 +8,9 @@ performances every cycle and dominated proxy bandwidth.
 Flow: read data/planner.json (wishlist slugs, written by the PMF sync) and
 data/latest.json (box-office ids per performance, from the daily scan) →
 classify each wishlist show's performances → write refreshed availability back
-into data/planner.json so the site's wishlist view shows fresh sold-out status.
+into data/planner.json so the site's wishlist view shows fresh sold-out status,
+and append the readings to data/wishlist_history.json as a retained
+sell-through time series.
 
 Shares the watchlist DynamoDB lock so it can't race other checks.
 """
@@ -17,7 +19,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from fringe_lib.availability import classify_box_office_ids
+from fringe_lib.availability import apply_availability, classify_box_office_ids
 from fringe_lib.aws_util import (
     acquire_watchlist_lock,
     env,
@@ -28,6 +30,7 @@ from fringe_lib.aws_util import (
 )
 from fringe_lib.client import FringeClient, make_async_client
 from fringe_lib.proxy import load_proxy_into_env
+from fringe_lib.wishlist_history import collect_samples, merge_samples
 
 
 def _perfs_by_slug(latest: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
@@ -37,38 +40,6 @@ def _perfs_by_slug(latest: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
         if slug:
             out[slug] = show.get("performances") or []
     return out
-
-
-def _apply_availability(
-    perfs: list[dict[str, Any]], avail: dict[str, dict[str, Any]]
-) -> dict[str, list[str]]:
-    """Recompute per-date buckets for one show from fresh availability."""
-    sold, nearly, available = set(), set(), set()
-    for perf in perfs:
-        box_id = perf.get("box_office_id") or ""
-        fresh = avail.get(box_id)
-        status = (
-            fresh["availability"]
-            if fresh
-            else (perf.get("availability") or "available")
-        )
-        if fresh:
-            perf["availability"] = fresh["availability"]
-            perf["percent_remaining"] = fresh["percent_remaining"]
-        day = perf.get("date")
-        if not day:
-            continue
-        if status == "sold_out":
-            sold.add(day)
-        elif status == "nearly_sold_out":
-            nearly.add(day)
-        else:
-            available.add(day)
-    return {
-        "sold_out_dates": sorted(sold),
-        "nearly_sold_out_dates": sorted(nearly),
-        "available_dates": sorted(available),
-    }
 
 
 async def run_wishlist_refresh() -> dict[str, Any]:
@@ -108,21 +79,38 @@ async def run_wishlist_refresh() -> dict[str, Any]:
         avail = await classify_box_office_ids(api, box_ids, nearly_threshold=nearly)
 
     refreshed = 0
+    refreshed_slugs: set[str] = set()
     for entry in wishlist:
         perfs = perfs_by_slug.get(entry.get("slug"), [])
         if not perfs:
             continue
-        entry.update(_apply_availability(perfs, avail))
+        entry.update(apply_availability(perfs, avail))
         refreshed += 1
+        if entry.get("slug"):
+            refreshed_slugs.add(str(entry["slug"]))
 
-    planner["wishlist_refreshed_at"] = _now_iso()
+    at = _now_iso()
+    planner["wishlist_refreshed_at"] = at
     put_json_s3(data_bucket, "data/planner.json", planner)
+
+    # Retain the readings so sell-through can be analysed later. Separate
+    # object because it accumulates: planner.json is replaced wholesale by
+    # every PlanMyFringe sync, and the frontend loads it on every visit.
+    history = merge_samples(
+        get_json_s3(data_bucket, "data/wishlist_history.json"),
+        collect_samples(perfs_by_slug, refreshed_slugs),
+        at=at,
+    )
+    put_json_s3(data_bucket, "data/wishlist_history.json", history)
 
     result = {
         "ok": True,
         "wishlist_shows": len(wishlist),
         "refreshed": refreshed,
         "performances_checked": len(box_ids),
+        "history_performances": history["performance_count"],
+        "history_samples": history["sample_count"],
+        "history_appended": history["appended"],
     }
     print(result, flush=True)
     return result
