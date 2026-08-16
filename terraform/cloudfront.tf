@@ -157,8 +157,13 @@ resource "aws_s3_object" "seed_config" {
     auto_watch_sold_out = true
   })
 
+  # Seed only: create the object if it's missing, then never touch it again.
+  # An explicit attribute list is a trap here — the scan rewrites this object
+  # with headers Terraform doesn't know about (see seed_latest below), and any
+  # attribute NOT in the list makes Terraform re-PUT the resource's `content`,
+  # wiping the scan output even though `content` itself is ignored.
   lifecycle {
-    ignore_changes = [content, etag, cache_control, content_type, tags, tags_all]
+    ignore_changes = all
   }
 }
 
@@ -179,7 +184,16 @@ resource "aws_s3_object" "seed_latest" {
   })
 
   # Never overwrite scan output after the first create.
+  #
+  # This MUST stay `all`. The previous explicit list omitted content_encoding,
+  # and the daily scan writes this object gzipped (put_json_s3). Terraform saw
+  # `content_encoding = "gzip" -> null`, which is a change it was not told to
+  # ignore, and an in-place update re-uploads the resource's `content` — so the
+  # 2026-08-16 13:10 deploy replaced a 3,050-show payload with the 296-byte
+  # "No scan yet" placeholder and the whole site rendered "no match".
+  # Ignoring `content` alone does NOT protect the object: any single
+  # non-ignored attribute drags the placeholder content along with it.
   lifecycle {
-    ignore_changes = [content, etag, cache_control, content_type, tags, tags_all]
+    ignore_changes = all
   }
 }
