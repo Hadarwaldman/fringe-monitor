@@ -126,7 +126,27 @@ def build_demo_data() -> dict[str, dict]:
             ],
             "wishlist": [
                 {"title": "Gamma for Kids!", "matched_show_title": "Gamma for Kids!", "score": 9},
+                # Carries the 15-minute refresh's readings. Deliberately
+                # different from the fixture scan (which has 80% remaining on
+                # this performance) so it is obvious in the UI whether the
+                # frontend is merging planner freshness over the daily scan.
+                {
+                    "title": "Alpha Comedy Hour",
+                    "matched_show_title": "Alpha Comedy Hour",
+                    "slug": "alpha-comedy-hour",
+                    "score": 8,
+                    "performances": [
+                        {
+                            "box_office_id": "911:1001",
+                            "date": "2026-08-14",
+                            "time": "19:30",
+                            "availability": "nearly_sold_out",
+                            "percent_remaining": 5,
+                        }
+                    ],
+                },
             ],
+            "wishlist_refreshed_at": "2026-08-16T09:45:00Z",
         },
     }
 

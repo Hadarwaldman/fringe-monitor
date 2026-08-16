@@ -78,7 +78,8 @@ First production scan (12–20 Aug window): ~3007 shows, ~19.5k performances cla
 
 - Trigger: EventBridge `rate(15 minutes)`
 - Refreshes availability for **only the PlanMyFringe wishlist shows** via direct per-performance price lookups (`availability.classify_box_office_ids`) — **no full programme fetch**
-- Writes fresh sold-out status into `data/planner.json` so the site's wishlist view stays current
+- Writes fresh sold-out status into `data/planner.json` so the site's wishlist view stays current — including the per-performance readings themselves (`performances: [{box_office_id, date, time, availability, percent_remaining}]` per wishlist entry), which the frontend merges over the daily scan so wishlist shows render 15-minute-fresh numbers
+- Appends every reading to `data/wishlist_history.json`, a retained sell-through time series (see below). Costs no extra proxy bandwidth — it stores lookups the job already makes
 - **Replaced the old whole-programme 15-min watchlist** (`fringe-monitor-watchlist`), which re-scanned ~15,000 auto-added performances every cycle and cost ~50+ GB/month of proxy bandwidth. That lambda still exists but its EventBridge rule is **DISABLED** — do not re-enable it (see Cost notes).
 
 ### Show monitors
@@ -206,6 +207,47 @@ lives only in the frontend display helpers (`soldPercent` / `formatSold` /
 `formatAvgSold` in `app.js`); nothing below that line should ever invert a
 percentage. The settings "Nearly sold-out at ≥ % sold" input converts on read
 and write, so the stored `nearly_threshold` stays a remaining threshold.
+
+### Wishlist sell-through history (`data/wishlist_history.json`)
+
+Written by the 15-minute wishlist refresh (`backend/fringe_lib/wishlist_history.py`),
+so a show's fill curve can be analysed after the fact rather than only ever
+showing its latest reading.
+
+```jsonc
+{
+  "updated_at": "2026-08-16T14:15:00Z",
+  "retention_days": 30,
+  "performance_count": 1544,
+  "sample_count": 8210,
+  "performances": {
+    "911:1001": {
+      "slug": "alpha-comedy-hour",
+      "date": "2026-08-18", "time": "19:30",
+      "last_seen": "2026-08-16T14:15:00Z",
+      "samples": [["2026-08-14T09:00:00Z", 41.0], ["2026-08-15T18:15:00Z", 63.0]]
+    }
+  }
+}
+```
+
+- **Values are percent *sold*** (same convention as `trend.py` and the UI), so
+  a series climbs toward 100 and `sold_out` is simply `100`.
+- **Samples are change-only.** A row is appended only when the value differs
+  from the previous one, so 96 readings a day collapse to a handful. Read it as
+  a step function: a value holds until the next sample. Without this the object
+  would grow by ~1,500 rows every 15 minutes.
+- An unpriced performance is **skipped, not recorded as 0** — missing data is
+  not an empty house.
+- Retention is anchored on the performance date: once a show has played its
+  curve is complete, and it ages out `retention_days` later. Rows are also
+  capped at `MAX_SAMPLES_PER_PERF`. A row with an unparseable date is kept.
+- `sold_through_rate(history, box_office_id, hours=24)` gives percentage points
+  sold per hour — the building block for velocity stats.
+
+Nothing in the frontend reads this file yet; it exists so the data is there
+when a stats view is built. A PlanMyFringe sync replaces `planner.json`
+wholesale, but never touches this object.
 
 ### DynamoDB single-table layout
 
