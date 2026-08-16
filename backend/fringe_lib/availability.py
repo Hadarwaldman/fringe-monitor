@@ -61,3 +61,57 @@ async def classify_box_office_ids(
 
     await asyncio.gather(*(one(b) for b in dict.fromkeys(box_office_ids)))
     return out
+
+
+def apply_availability(
+    perfs: list[dict[str, Any]], avail: dict[str, dict[str, Any]]
+) -> dict[str, Any]:
+    """Fold fresh readings into a show's performances; return buckets + readings.
+
+    Updates `perfs` in place and reports both the per-date buckets the UI
+    filters on and the readings themselves. The readings used to be computed
+    and dropped — only the buckets were persisted — so freshly measured
+    percentages never reached the frontend.
+
+    Performances missing from `avail` were not re-checked: they keep their
+    existing value and are deliberately absent from `performances`, so nothing
+    downstream mistakes a stale number for a fresh one.
+    """
+    sold, nearly, available = set(), set(), set()
+    checked: list[dict[str, Any]] = []
+    for perf in perfs:
+        box_id = perf.get("box_office_id") or ""
+        fresh = avail.get(box_id)
+        status = (
+            fresh["availability"]
+            if fresh
+            else (perf.get("availability") or "available")
+        )
+        if fresh:
+            perf["availability"] = fresh["availability"]
+            perf["percent_remaining"] = fresh["percent_remaining"]
+            checked.append(
+                {
+                    "box_office_id": box_id,
+                    "date": perf.get("date"),
+                    "time": perf.get("time"),
+                    "availability": fresh["availability"],
+                    "percent_remaining": fresh["percent_remaining"],
+                }
+            )
+        day = perf.get("date")
+        if not day:
+            continue
+        if status == "sold_out":
+            sold.add(day)
+        elif status == "nearly_sold_out":
+            nearly.add(day)
+        else:
+            available.add(day)
+    checked.sort(key=lambda p: (str(p.get("date") or ""), str(p.get("time") or "")))
+    return {
+        "sold_out_dates": sorted(sold),
+        "nearly_sold_out_dates": sorted(nearly),
+        "available_dates": sorted(available),
+        "performances": checked,
+    }

@@ -19,7 +19,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from fringe_lib.availability import classify_box_office_ids
+from fringe_lib.availability import apply_availability, classify_box_office_ids
 from fringe_lib.aws_util import (
     acquire_watchlist_lock,
     env,
@@ -40,58 +40,6 @@ def _perfs_by_slug(latest: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
         if slug:
             out[slug] = show.get("performances") or []
     return out
-
-
-def _apply_availability(
-    perfs: list[dict[str, Any]], avail: dict[str, dict[str, Any]]
-) -> dict[str, Any]:
-    """Recompute per-date buckets for one show from fresh availability.
-
-    Also returns the per-performance readings themselves. They used to be
-    computed, written onto the in-memory copy of latest.json and then dropped
-    on the floor — only the date buckets survived, so the freshly measured
-    percentages never reached the UI and latest.json stayed a day old. They now
-    ride along in planner.json, which is small (wishlist shows only) and
-    already loaded by My Fringe.
-    """
-    sold, nearly, available = set(), set(), set()
-    checked: list[dict[str, Any]] = []
-    for perf in perfs:
-        box_id = perf.get("box_office_id") or ""
-        fresh = avail.get(box_id)
-        status = (
-            fresh["availability"]
-            if fresh
-            else (perf.get("availability") or "available")
-        )
-        if fresh:
-            perf["availability"] = fresh["availability"]
-            perf["percent_remaining"] = fresh["percent_remaining"]
-            checked.append(
-                {
-                    "box_office_id": box_id,
-                    "date": perf.get("date"),
-                    "time": perf.get("time"),
-                    "availability": fresh["availability"],
-                    "percent_remaining": fresh["percent_remaining"],
-                }
-            )
-        day = perf.get("date")
-        if not day:
-            continue
-        if status == "sold_out":
-            sold.add(day)
-        elif status == "nearly_sold_out":
-            nearly.add(day)
-        else:
-            available.add(day)
-    checked.sort(key=lambda p: (str(p.get("date") or ""), str(p.get("time") or "")))
-    return {
-        "sold_out_dates": sorted(sold),
-        "nearly_sold_out_dates": sorted(nearly),
-        "available_dates": sorted(available),
-        "performances": checked,
-    }
 
 
 async def run_wishlist_refresh() -> dict[str, Any]:
@@ -136,7 +84,7 @@ async def run_wishlist_refresh() -> dict[str, Any]:
         perfs = perfs_by_slug.get(entry.get("slug"), [])
         if not perfs:
             continue
-        entry.update(_apply_availability(perfs, avail))
+        entry.update(apply_availability(perfs, avail))
         refreshed += 1
         if entry.get("slug"):
             refreshed_slugs.add(str(entry["slug"]))

@@ -161,13 +161,13 @@ def test_sold_through_rate_needs_two_samples():
     assert sold_through_rate(history, "nope") is None
 
 
-def test_refresh_job_returns_the_readings_it_measured():
-    """The per-performance values used to be computed and then discarded."""
-    import sys
-    from pathlib import Path
+def test_apply_availability_returns_the_readings_it_measured():
+    """The per-performance values used to be computed and then discarded.
 
-    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "backend"))
-    from lambdas.wishlist_refresh.handler import _apply_availability
+    Lives in fringe_lib, not the handler: handlers import boto3, which the
+    offline suite deliberately does not have.
+    """
+    from backend.fringe_lib.availability import apply_availability
 
     perfs = [
         perf("a", date="2026-08-18", time="19:30"),
@@ -178,7 +178,7 @@ def test_refresh_job_returns_the_readings_it_measured():
         "a": {"availability": "sold_out", "percent_remaining": 0},
         "b": {"availability": "nearly_sold_out", "percent_remaining": 12},
     }
-    out = _apply_availability(perfs, avail)
+    out = apply_availability(perfs, avail)
 
     assert out["sold_out_dates"] == ["2026-08-18"]
     assert out["available_dates"] == ["2026-08-19"]
