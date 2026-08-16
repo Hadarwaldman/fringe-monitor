@@ -20,12 +20,14 @@ backend/
     monitors.py         Show monitors: per-show/date-range availability alerts
     planmyfringe.py     PlanMyFringe account sync: login + scrape schedule/wishlist, match to scan
     proxy.py            Loads residential-proxy URL from SSM into FRINGE_PROXY_URL (edfringe egress)
+    availability.py     Cheap targeted availability: classify a specific set of box-office IDs (no programme fetch); used by monitors, wishlist-refresh, live search endpoint
     aws_util.py         boto3 helpers: DynamoDB config/watchlist/monitors, S3 writes (Lambda-only)
   lambdas/
-    full_scan/handler.py     Daily job (EventBridge cron 06:00 UTC)
-    watchlist/handler.py     15-min job: watchlist reopen emails (full programme fetch) + monitors
+    full_scan/handler.py     Daily job (EventBridge cron 06:00 UTC): full programme scan for browse-all
     monitor_check/handler.py 3-min job: lightweight show-monitor check (direct box-office-id price lookups, no programme fetch)
-    api/handler.py           HTTP API Gateway backend (/config, /watchlist, /monitors, /health)
+    wishlist_refresh/handler.py 15-min job: refresh availability for ONLY the PlanMyFringe wishlist shows (cheap per-perf lookups); replaces the old whole-programme watchlist
+    watchlist/handler.py     LEGACY: whole-programme reopen scan; its EventBridge rule is DISABLED (too much proxy bandwidth). Kept for possible re-enable.
+    api/handler.py           HTTP API Gateway backend (/config, /monitors, GET /shows/{slug}/availability live lookup, /health)
   requirements.txt      Lambda runtime deps (httpx)
 frontend/               Static CloudFront site. ui.js renders the shared nav (header + mobile
                         tab bar), owns user/date-window localStorage, and registers sw.js.
@@ -51,6 +53,26 @@ scripts/
 ```
 
 The three Lambdas share one zip (`build/lambda.zip`); each handler is copied to the zip root (`full_scan.py`, `watchlist.py`, `api.py`) alongside `fringe_lib/`.
+
+## ⚠️ COST: proxy bandwidth is the only real expense — do not undo the cost design
+
+**AWS is effectively free** (all within free tier). **The one metered cost is the IPRoyal residential proxy** (`FRINGE_PROXY_URL`), billed per GB. *Every* edfringe API call goes through it (required — Cloudflare 403s AWS IPs; see the `edfringe-cloudflare-datacenter-block` memory). So **proxy bandwidth = number of edfringe requests**, and that is dominated by scan breadth × frequency.
+
+Measured bandwidth (real, Aug 2026): 1 token call ≈ 1.4 KB; 1 performance price lookup ≈ 0.46 KB; a full programme fetch ≈ 27 MB. Current monthly totals:
+
+| Job | Cadence | Requests/run | Proxy/month |
+| --- | --- | --- | --- |
+| Daily full scan | 1×/day | 9 pages + ~21k prices | ~0.8 GB |
+| Wishlist refresh | every 15 min | ~1,544 prices (217-show wishlist) | ~2.0 GB |
+| Monitor check | every 3 min | ~6 prices | ~0.06 GB |
+| Live search | on demand | ~9 prices/view | negligible |
+
+**Total ≈ 2.8 GB/month → a 2 GB top-up lasts ~3 weeks.** Wishlist size scales this linearly (it was ~2 GB just for wishlist refresh because the wishlist is large).
+
+**Rules to preserve the cost design — a "helpful" change here can 50× the bill:**
+- **NEVER re-enable the `watchlist-15m` EventBridge rule** (it's `state = "DISABLED"` in `terraform/eventbridge.tf`). It re-fetched the whole programme every 15 min (~50+ GB/mo, ~$100+/mo). It was deliberately replaced by `wishlist_refresh` + live search.
+- **NEVER add a full `fetch_all_programme` call to any frequent (sub-daily) job.** Frequent jobs must use `availability.classify_box_office_ids` (targeted per-performance lookups), never a programme scan.
+- Cadence knobs live in `terraform/variables.tf`: `monitor_schedule` (3 min), `wishlist_refresh_schedule` (15 min), `daily_schedule` (06:00 UTC). To cut cost, slow `wishlist_refresh_schedule` (30 min ≈ 1.85 GB/mo, 60 min ≈ 1.35 GB/mo) — do not speed anything up without flagging the bandwidth cost.
 
 ## Key rule: shared library
 
