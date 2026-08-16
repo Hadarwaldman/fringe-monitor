@@ -18,10 +18,16 @@ resource "aws_lambda_permission" "daily_full_scan" {
   source_arn    = aws_cloudwatch_event_rule.daily_full_scan.arn
 }
 
+# The whole-programme 15-min watchlist is DISABLED: it re-scanned ~15,000
+# performances every cycle and dominated proxy bandwidth. Wishlist freshness is
+# now handled cheaply by the wishlist-refresh rule below (only the user's
+# PlanMyFringe wishlist shows). The watchlist Lambda + rule are kept (state=
+# DISABLED) so they can be re-enabled if ever needed, without recreating them.
 resource "aws_cloudwatch_event_rule" "watchlist" {
   name                = "${local.name}-watchlist-15m"
-  description         = "Watchlist reopen check every 15 minutes"
+  description         = "DISABLED: old whole-programme watchlist (replaced by wishlist-refresh)"
   schedule_expression = var.watchlist_schedule
+  state               = "DISABLED"
 }
 
 resource "aws_cloudwatch_event_target" "watchlist" {
@@ -36,6 +42,26 @@ resource "aws_lambda_permission" "watchlist" {
   function_name = aws_lambda_function.watchlist.function_name
   principal     = "events.amazonaws.com"
   source_arn    = aws_cloudwatch_event_rule.watchlist.arn
+}
+
+resource "aws_cloudwatch_event_rule" "wishlist_refresh" {
+  name                = "${local.name}-wishlist-refresh"
+  description         = "Refresh availability for the PlanMyFringe wishlist shows only (cheap)"
+  schedule_expression = var.wishlist_refresh_schedule
+}
+
+resource "aws_cloudwatch_event_target" "wishlist_refresh" {
+  rule      = aws_cloudwatch_event_rule.wishlist_refresh.name
+  target_id = "wishlist-refresh"
+  arn       = aws_lambda_function.wishlist_refresh.arn
+}
+
+resource "aws_lambda_permission" "wishlist_refresh" {
+  statement_id  = "AllowEventBridgeWishlistRefresh"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.wishlist_refresh.function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.wishlist_refresh.arn
 }
 
 resource "aws_cloudwatch_event_rule" "monitor_check" {

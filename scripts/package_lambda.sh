@@ -18,6 +18,7 @@ cp -R "$ROOT/backend/fringe_lib" "$BUILD/fringe_lib"
 cp "$ROOT/backend/lambdas/full_scan/handler.py" "$BUILD/full_scan.py"
 cp "$ROOT/backend/lambdas/watchlist/handler.py" "$BUILD/watchlist.py"
 cp "$ROOT/backend/lambdas/monitor_check/handler.py" "$BUILD/monitor_check.py"
+cp "$ROOT/backend/lambdas/wishlist_refresh/handler.py" "$BUILD/wishlist_refresh.py"
 cp "$ROOT/backend/lambdas/api/handler.py" "$BUILD/api.py"
 
 # Drop caches / tests to keep the zip smaller.

@@ -1690,6 +1690,71 @@
       </div>
       ${availabilityHtml}
     `;
+
+    // Live availability: on a real show, refresh this show's performances via
+    // the API (a direct per-performance lookup, no full scan) and re-render the
+    // Availability panel so the page shows current sold-out status.
+    if (show?.slug && apiBase) {
+      refreshLiveAvailability(show);
+    }
+  }
+
+  async function refreshLiveAvailability(show) {
+    const panel = document.querySelector('[aria-label="Availability"] .remaining');
+    if (panel) {
+      const note = document.createElement("span");
+      note.className = "status live-checking";
+      note.textContent = "Checking live availability…";
+      panel.parentElement.insertBefore(note, panel);
+    }
+    try {
+      const res = await FringeNet.fetchWithTimeout(
+        `${apiBase}/shows/${encodeURIComponent(show.slug)}/availability`,
+        { cache: "no-store", timeoutMs: 20000 },
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      if (!data.found || !Array.isArray(data.performances)) return;
+      const byId = new Map(
+        data.performances.map((p) => [String(p.performance_id), p]),
+      );
+      for (const perf of show.performances || []) {
+        const fresh = byId.get(String(perf.performance_id));
+        if (fresh) {
+          perf.availability = fresh.availability;
+          perf.percent_remaining = fresh.percent_remaining;
+        }
+      }
+      // Recompute the show's date buckets from refreshed performances.
+      recomputeShowDates(show);
+      const remaining = document.querySelector('[aria-label="Availability"] .remaining');
+      if (remaining) remaining.innerHTML = remainingByDayHtml(show);
+      const checking = document.querySelector(".live-checking");
+      if (checking) {
+        checking.classList.remove("live-checking");
+        checking.textContent = data.checked_at
+          ? `Live as of ${new Date(data.checked_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+          : "Live availability";
+      }
+    } catch (err) {
+      const checking = document.querySelector(".live-checking");
+      if (checking) checking.textContent = "Showing last scan (live check unavailable)";
+    }
+  }
+
+  function recomputeShowDates(show) {
+    const sold = new Set();
+    const nearly = new Set();
+    const avail = new Set();
+    for (const p of show.performances || []) {
+      if (!p.date) continue;
+      if (p.availability === "sold_out") sold.add(p.date);
+      else if (p.availability === "nearly_sold_out") nearly.add(p.date);
+      else avail.add(p.date);
+    }
+    show.sold_out_dates = [...sold].sort();
+    show.nearly_sold_out_dates = [...nearly].sort();
+    show.available_dates = [...avail].sort();
   }
 
   // ------------------------------------------------------------- imports (My Fringe)

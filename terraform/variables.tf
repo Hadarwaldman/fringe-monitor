@@ -76,3 +76,9 @@ variable "monitor_schedule" {
   type        = string
   default     = "rate(3 minutes)"
 }
+
+variable "wishlist_refresh_schedule" {
+  description = "EventBridge schedule for the cheap PlanMyFringe wishlist availability refresh"
+  type        = string
+  default     = "rate(15 minutes)"
+}
