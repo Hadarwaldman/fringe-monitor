@@ -20,14 +20,15 @@ backend/
     monitors.py         Show monitors: per-show/date-range availability alerts
     planmyfringe.py     PlanMyFringe account sync: login + scrape schedule/wishlist, match to scan
     proxy.py            Loads residential-proxy URL from SSM into FRINGE_PROXY_URL (edfringe egress)
-    availability.py     Cheap targeted availability: classify a specific set of box-office IDs (no programme fetch); used by monitors, wishlist-refresh, live search endpoint
+    availability.py     Cheap targeted availability: classify a specific set of box-office IDs (no programme fetch); used by monitors, wishlist-refresh, and both live endpoints (show detail, My Fringe on-load re-price)
     aws_util.py         boto3 helpers: DynamoDB config/watchlist/monitors, S3 writes (Lambda-only)
   lambdas/
     full_scan/handler.py     Daily job (EventBridge cron 06:00 UTC): full programme scan for browse-all
     monitor_check/handler.py 3-min job: lightweight show-monitor check (direct box-office-id price lookups, no programme fetch)
     wishlist_refresh/handler.py 15-min job: refresh availability for ONLY the PlanMyFringe wishlist shows (cheap per-perf lookups); replaces the old whole-programme watchlist
     watchlist/handler.py     LEGACY: whole-programme reopen scan; its EventBridge rule is DISABLED (too much proxy bandwidth). Kept for possible re-enable.
-    api/handler.py           HTTP API Gateway backend (/config, /monitors, GET /shows/{slug}/availability live lookup, /health)
+    api/handler.py           HTTP API Gateway backend (/config, /monitors, GET /shows/{slug}/availability
+                             + POST /availability live lookups, /health)
   requirements.txt      Lambda runtime deps (httpx)
 frontend/               Static CloudFront site. ui.js renders the shared nav (header + mobile
                         tab bar), owns user/date-window localStorage, and registers sw.js.
@@ -66,6 +67,7 @@ Measured bandwidth (real, Aug 2026): 1 token call ≈ 1.4 KB; 1 performance pric
 | Wishlist refresh | every 15 min | ~1,544 prices (217-show wishlist) | ~2.0 GB |
 | Monitor check | every 3 min | ~6 prices | ~0.06 GB |
 | Live search | on demand | ~9 prices/view | negligible |
+| My Fringe load | on page load | ~1 price/upcoming entry (cap 60) | negligible |
 
 **Total ≈ 2.8 GB/month → a 2 GB top-up lasts ~3 weeks.** Wishlist size scales this linearly (it was ~2 GB just for wishlist refresh because the wishlist is large).
 

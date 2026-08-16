@@ -148,6 +148,8 @@ HTTP API Gateway → Lambda.
 | `PUT` | `/monitors/{id}` | Update `start_date`/`end_date`/`active` |
 | `DELETE` | `/monitors/{id}` | Remove a monitor |
 | `POST` | `/monitors/check` | Run the 15-minute check immediately (async) |
+| `GET` | `/shows/{slug}/availability` | Live re-price of one show's whole run (direct price lookups, no programme fetch) |
+| `POST` | `/availability` | Live re-price of specific `box_office_ids` (max 60) — used by My Fringe on load |
 
 CORS is open (`*`) so the CloudFront site can call it.
 
@@ -158,7 +160,10 @@ Static files in S3, served by CloudFront. Four destinations share a nav header
 
 - `/` — **My Fringe** (`index.html`, `app.js`): itinerary grouped by day merging
   the PlanMyFringe schedule, local bookings and wishlist; filter chips
-  (All / Booked / At risk / Wishlist); sync + CSV/PDF import.
+  (All / Booked / At risk / Wishlist); sync + CSV/PDF import. On load it
+  re-prices the upcoming entries live via `POST /availability` (one lookup per
+  entry date, capped at 60) so the day's status is current rather than up to a
+  day old; on failure the scan numbers stay on screen.
 - `/shows.html` — **Shows** browser (`app.js`): search + availability filter up
   front, the rest (genre, offers, view dates) behind a "More filters"
   disclosure; table on desktop, cards on mobile; incremental "Show more"
