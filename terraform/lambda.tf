@@ -80,6 +80,27 @@ resource "aws_lambda_function" "monitor_check" {
   ]
 }
 
+resource "aws_lambda_function" "wishlist_refresh" {
+  function_name    = "${local.name}-wishlist-refresh"
+  role             = aws_iam_role.lambda.arn
+  handler          = "wishlist_refresh.handler"
+  runtime          = "python3.12"
+  filename         = local.lambda_zip_path
+  source_code_hash = local.lambda_hash
+
+  timeout     = 300
+  memory_size = 512
+
+  environment {
+    variables = local.lambda_env
+  }
+
+  depends_on = [
+    aws_iam_role_policy.lambda_app,
+    aws_iam_role_policy_attachment.lambda_basic,
+  ]
+}
+
 resource "aws_lambda_function" "api" {
   function_name    = "${local.name}-api"
   role             = aws_iam_role.lambda.arn
@@ -117,6 +138,11 @@ resource "aws_cloudwatch_log_group" "watchlist" {
 
 resource "aws_cloudwatch_log_group" "monitor_check" {
   name              = "/aws/lambda/${aws_lambda_function.monitor_check.function_name}"
+  retention_in_days = 14
+}
+
+resource "aws_cloudwatch_log_group" "wishlist_refresh" {
+  name              = "/aws/lambda/${aws_lambda_function.wishlist_refresh.function_name}"
   retention_in_days = 14
 }
 

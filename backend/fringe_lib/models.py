@@ -21,6 +21,10 @@ class PerformanceRow:
     percent_remaining: int | None = None
     availability_level: str | None = None
     availability: str = ""
+    # True when availability is a fallback (price lookup failed or the run's
+    # deadline hit), not a real classification. Consumers that alert on
+    # transitions must ignore unchecked rows.
+    unchecked: bool = False
     url: str = ""
     price_types: list[str] | None = None
     offers: list[dict[str, str]] | None = None
@@ -66,16 +70,15 @@ class PerformanceRow:
         # show_title / slug / genre / venue / url are deliberately absent:
         # every performance is nested under its show in latest.json, which
         # already carries all five. Repeating them per performance was ~40%
-        # of the payload.
+        # of the payload. datetime_utc / ticket_status / availability_level
+        # are likewise CSV-only: nothing that reads latest.json uses them,
+        # and at ~10k performances every field is real bytes on a phone.
         return {
             "performance_id": self.performance_id,
             "date": self.date_local,
             "time": self.time_local,
-            "datetime_utc": self.datetime_utc,
-            "ticket_status": self.ticket_status,
             "availability": self.availability,
             "percent_remaining": self.percent_remaining,
-            "availability_level": self.availability_level,
             "box_office_id": self.box_office_id,
             "offers": offers,
         }

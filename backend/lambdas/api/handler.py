@@ -61,6 +61,74 @@ def _parse_body(event: dict[str, Any]) -> dict[str, Any]:
     return json.loads(raw)
 
 
+def _unquote(value: str) -> str:
+    from urllib.parse import unquote
+
+    return unquote(value)
+
+
+def _live_show_availability(slug: str) -> dict[str, Any]:
+    """Live availability for one show, on demand (search / show open).
+
+    Reads the show's box-office ids from the last scan (data/latest.json) and
+    does direct price lookups — no full programme fetch. Cheap enough to run
+    per search.
+    """
+    import asyncio
+
+    from fringe_lib.availability import classify_box_office_ids
+    from fringe_lib.client import FringeClient, make_async_client
+
+    latest = get_json_s3(env("DATA_BUCKET"), "data/latest.json") or {}
+    show = next(
+        (s for s in latest.get("shows") or [] if s.get("slug") == slug), None
+    )
+    if not show:
+        return {"slug": slug, "found": False, "performances": []}
+
+    perfs = show.get("performances") or []
+    box_ids = [p["box_office_id"] for p in perfs if p.get("box_office_id")]
+    config = get_config()
+    nearly = int(config.get("nearly_threshold") or 20)
+
+    async def go() -> dict[str, dict[str, Any]]:
+        load_proxy_into_env()
+        async with make_async_client() as client:
+            api = FringeClient(client)
+            await api.authenticate()
+            return await classify_box_office_ids(api, box_ids, nearly_threshold=nearly)
+
+    avail = asyncio.run(go()) if box_ids else {}
+    out_perfs = []
+    for perf in perfs:
+        fresh = avail.get(perf.get("box_office_id") or "")
+        out_perfs.append(
+            {
+                "performance_id": perf.get("performance_id"),
+                "date": perf.get("date"),
+                "time": perf.get("time"),
+                "box_office_id": perf.get("box_office_id"),
+                "availability": fresh["availability"] if fresh else perf.get("availability"),
+                "percent_remaining": (
+                    fresh["percent_remaining"] if fresh else perf.get("percent_remaining")
+                ),
+            }
+        )
+    return {
+        "slug": slug,
+        "show_title": show.get("show_title"),
+        "found": True,
+        "checked_at": _now_iso_api(),
+        "performances": out_perfs,
+    }
+
+
+def _now_iso_api() -> str:
+    from datetime import datetime, timezone
+
+    return datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     method = (
         event.get("requestContext", {}).get("http", {}).get("method")
@@ -105,6 +173,11 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                 item["source"] = item.get("source") or "manual"
             count = upsert_watch_items(items)
             return _response(200, {"upserted": count, "items": list_watchlist()})
+
+        avail_match = re.search(r"/shows/([^/]+)/availability$", path)
+        if avail_match and method == "GET":
+            slug = _unquote(avail_match.group(1))
+            return _response(200, _live_show_availability(slug))
 
         if path.endswith("/monitors") and method == "GET":
             return _response(200, {"items": list_monitors()})

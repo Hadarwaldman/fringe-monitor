@@ -200,6 +200,25 @@ def replace_watchlist_source(
     return upsert_watch_items(fresh, table)
 
 
+def stamp_monitor_check_skipped(table=None) -> int:
+    """Record on every active monitor that a check was skipped (lock held).
+
+    Keeps a lock-blocked monitor_check visible in the UI instead of silent:
+    last_checked_at stalls while last_check_skipped_at advances.
+    """
+    from datetime import datetime, timezone
+
+    table = table or dynamodb_table()
+    ts = datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    stamped = 0
+    for monitor in list_monitors(table):
+        if not monitor.get("active", True):
+            continue
+        patch_monitor(monitor["monitor_id"], {"last_check_skipped_at": ts}, table)
+        stamped += 1
+    return stamped
+
+
 def acquire_watchlist_lock(*, ttl_seconds: int = 840, table=None) -> bool:
     """Best-effort mutex so watchlist/monitor runs don't overlap and race on
     MONITOR state. Conditional-put a LOCK item that only succeeds if none

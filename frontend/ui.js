@@ -181,6 +181,16 @@ window.FringeUI = (() => {
     renderNav(document.body.dataset.nav || "");
   });
 
+  // Offline/weak-signal app shell. The SW only handles static assets;
+  // net.js owns /data/* caching so pages can flag stale data to the user.
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("./sw.js").catch(() => {
+        /* e.g. http:// dev server without localhost — shell just isn't cached */
+      });
+    });
+  }
+
   return {
     USERS,
     DEFAULT_WINDOW,

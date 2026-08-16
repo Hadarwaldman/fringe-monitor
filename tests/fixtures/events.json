@@ -1,0 +1,191 @@
+{
+  "_comment": "Synthetic edfringe GraphQL events snapshot. Window under test is 2026-08-12..2026-08-20 (Edinburgh = UTC+1 in August). Exercises: tz day boundary, cancelled perfs, placeholder dateTime, non-checkable status, soldOut flag, NO_ALLOCATION status, missing boxOfficeId.",
+  "events": [
+    {
+      "id": 101,
+      "title": "Alpha Comedy Hour",
+      "slug": "alpha-comedy-hour",
+      "genre": "Comedy",
+      "priceType": ["PAID"],
+      "description": "An hour of alpha-grade comedy.",
+      "ageRestriction": "FOURTEEN",
+      "duration": "60",
+      "images": [{ "url": "https://img.example/alpha.jpg" }],
+      "venues": [
+        {
+          "title": "Roaring Stag",
+          "slug": "roaring-stag",
+          "address1": "1 High St",
+          "postCode": "EH1 1AA",
+          "description": "Cellar bar"
+        }
+      ],
+      "performances": [
+        {
+          "id": 1001,
+          "title": "",
+          "dateTime": "2026-08-14T18:30:00Z",
+          "soldOut": false,
+          "ticketStatus": "TICKETS_AVAILABLE",
+          "status": "ON_SALE",
+          "ticketsAvailable": true,
+          "boxOfficeId": "911:1001",
+          "cancelled": false,
+          "badges": []
+        },
+        {
+          "id": 1002,
+          "title": "",
+          "dateTime": "2026-08-15T18:30:00Z",
+          "soldOut": false,
+          "ticketStatus": "TICKETS_AVAILABLE",
+          "status": "ON_SALE",
+          "ticketsAvailable": true,
+          "boxOfficeId": "911:1002",
+          "cancelled": false,
+          "badges": []
+        },
+        {
+          "id": 1003,
+          "title": "",
+          "dateTime": "2026-08-16T18:30:00Z",
+          "soldOut": true,
+          "ticketStatus": "TICKETS_AVAILABLE",
+          "status": "ON_SALE",
+          "ticketsAvailable": false,
+          "boxOfficeId": "911:1003",
+          "cancelled": false,
+          "badges": []
+        },
+        {
+          "id": 1004,
+          "title": "",
+          "dateTime": "2026-08-17T18:30:00Z",
+          "soldOut": false,
+          "ticketStatus": "TICKETS_AVAILABLE",
+          "status": "CANCELLED",
+          "ticketsAvailable": false,
+          "boxOfficeId": "911:1004",
+          "cancelled": true,
+          "badges": []
+        },
+        {
+          "id": 1005,
+          "title": "",
+          "dateTime": "0001-01-01T00:00:00Z",
+          "soldOut": false,
+          "ticketStatus": "TICKETS_AVAILABLE",
+          "status": "ON_SALE",
+          "ticketsAvailable": true,
+          "boxOfficeId": "911:1005",
+          "cancelled": false,
+          "badges": []
+        },
+        {
+          "id": 1006,
+          "title": "",
+          "dateTime": "2026-08-25T18:30:00Z",
+          "soldOut": false,
+          "ticketStatus": "TICKETS_AVAILABLE",
+          "status": "ON_SALE",
+          "ticketsAvailable": true,
+          "boxOfficeId": "911:1006",
+          "cancelled": false,
+          "badges": []
+        }
+      ]
+    },
+    {
+      "id": 102,
+      "title": "Beta: A Drama",
+      "slug": "beta-a-drama",
+      "genre": "Theatre",
+      "priceType": "PAID",
+      "description": "Two hours of beta drama.",
+      "ageRestriction": "TWELVE",
+      "duration": "120",
+      "images": [],
+      "venues": [
+        {
+          "title": "Hidden Door",
+          "slug": "hidden-door",
+          "address1": "9 Cowgate",
+          "postCode": "EH1 1JR",
+          "description": ""
+        }
+      ],
+      "performances": [
+        {
+          "id": 2001,
+          "title": "",
+          "dateTime": "2026-08-11T23:30:00Z",
+          "soldOut": false,
+          "ticketStatus": "TICKETS_AVAILABLE",
+          "status": "ON_SALE",
+          "ticketsAvailable": true,
+          "boxOfficeId": "912:2001",
+          "cancelled": false,
+          "badges": []
+        },
+        {
+          "id": 2002,
+          "title": "",
+          "dateTime": "2026-08-14T20:00:00Z",
+          "soldOut": false,
+          "ticketStatus": "NO_ALLOCATION_CONTACT_VENUE",
+          "status": "ON_SALE",
+          "ticketsAvailable": false,
+          "boxOfficeId": "912:2002",
+          "cancelled": false,
+          "badges": []
+        },
+        {
+          "id": 2003,
+          "title": "",
+          "dateTime": "2026-08-15T20:00:00Z",
+          "soldOut": false,
+          "ticketStatus": "OFF_SALE",
+          "status": "OFF_SALE",
+          "ticketsAvailable": false,
+          "boxOfficeId": "912:2003",
+          "cancelled": false,
+          "badges": []
+        }
+      ]
+    },
+    {
+      "id": 103,
+      "title": "Gamma for Kids!",
+      "slug": "gamma-for-kids",
+      "genre": "Children's Shows",
+      "priceType": ["FREE"],
+      "description": "Free-range gamma rays.",
+      "ageRestriction": "THREE",
+      "duration": "45",
+      "images": [],
+      "venues": [
+        {
+          "title": "Sunny Yurt",
+          "slug": "sunny-yurt",
+          "address1": "The Meadows",
+          "postCode": "EH9 9EX",
+          "description": ""
+        }
+      ],
+      "performances": [
+        {
+          "id": 3001,
+          "title": "Morning show",
+          "dateTime": "2026-08-13T09:00:00Z",
+          "soldOut": false,
+          "ticketStatus": "FREE_TICKETED",
+          "status": "ON_SALE",
+          "ticketsAvailable": true,
+          "boxOfficeId": null,
+          "cancelled": false,
+          "badges": []
+        }
+      ]
+    }
+  ]
+}

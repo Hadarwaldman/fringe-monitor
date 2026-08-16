@@ -229,6 +229,36 @@ Outputs under `output/`:
 - `fringe_raw_programme.json` — raw programme snapshot
 - `latest.json` — same shape the cloud UI consumes
 
+If the AWS proxy is down (see *Egress proxy*), a local scan can be published
+straight to the live site: `scripts/publish_scan.sh` uploads `output/`'s JSON
+gzipped with the same headers the Lambda uses.
+
+---
+
+## Tests & local dev server (fully offline)
+
+Cloudflare blocks non-residential IPs and 429s bulk traffic, so testing never
+touches edfringe or the live site:
+
+```bash
+pip install -r requirements-dev.txt
+pytest tests/ -q                             # scanner/monitor/client logic
+python scripts/dev_server.py                 # real frontend + demo data at :8010
+python scripts/dev_server.py --data output   # browse your local scan
+python scripts/dev_server.py --latency 3000 --fail-rate 0.4 --gzip  # weak-signal drill
+```
+
+The dev server serves the production frontend against fixture data (built by
+running `tests/fixtures/events.json` through the real scan pipeline) and stubs
+the API, so every page works with no AWS and no network. CI runs the same
+tests on every PR and gates deploys on them.
+
+The frontend itself is built for weak connections: data loads are
+cached-copy-first (Cache API) with background revalidation and retries
+(`frontend/net.js`), a service worker keeps the app shell available offline
+(`frontend/sw.js`), and a stale-data banner with Retry appears instead of a
+blank page when the network is down.
+
 ---
 
 ## Deploy

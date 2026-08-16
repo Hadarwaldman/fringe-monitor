@@ -43,19 +43,19 @@
   async function loadConfig() {
     if (apiBase) {
       try {
-        const res = await fetch(`${apiBase}/config`, { cache: "no-store" });
+        const res = await FringeNet.fetchWithTimeout(`${apiBase}/config`, {
+          cache: "no-store",
+          timeoutMs: 8000,
+        });
         if (res.ok) config = await res.json();
       } catch (_) {
         /* fall through to static file */
       }
     }
     if (!config) {
-      try {
-        const res = await fetch(`/data/config.json?ts=${Date.now()}`, { cache: "no-store" });
-        if (res.ok) config = await res.json();
-      } catch (_) {
-        /* offline */
-      }
+      await FringeNet.loadJson("/data/config.json", (data) => {
+        config = data;
+      });
     }
     applyWindowToForm();
   }
@@ -162,7 +162,10 @@
       return;
     }
     try {
-      const res = await fetch(`${apiBase}/settings/planmyfringe`, { cache: "no-store" });
+      const res = await FringeNet.fetchWithTimeout(`${apiBase}/settings/planmyfringe`, {
+        cache: "no-store",
+        timeoutMs: 15000,
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || res.statusText);
       setCurrent(

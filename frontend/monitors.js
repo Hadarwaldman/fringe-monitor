@@ -4,6 +4,7 @@
   const state = {
     shows: [],
     monitors: [],
+    monitorsLoaded: false,
     scanWindow: { start: "2026-08-01", end: "2026-08-31" },
   };
 
@@ -59,8 +60,11 @@
 
   async function api(path, options = {}) {
     if (!apiBase) throw new Error("API URL missing (config.js)");
-    const res = await fetch(`${apiBase}${path}`, {
+    // Timeout so a dead connection surfaces as an error instead of hanging
+    // forever. No auto-retry: POST/PUT/DELETE are not safe to repeat.
+    const res = await FringeNet.fetchWithTimeout(`${apiBase}${path}`, {
       headers: { "Content-Type": "application/json" },
+      timeoutMs: 20000,
       ...options,
     });
     const data = await res.json().catch(() => ({}));
@@ -69,25 +73,32 @@
   }
 
   async function loadShows() {
-    const res = await fetch(`/data/latest.json?ts=${Date.now()}`, { cache: "no-store" });
-    if (!res.ok) return;
-    const data = await res.json();
-    state.shows = data.shows || [];
-    if (data.start_date && data.end_date) {
-      state.scanWindow = { start: data.start_date, end: data.end_date };
-    }
-    const list = $("monitor-show-list");
-    list.innerHTML = [...new Set(state.shows.map((s) => s.show_title).filter(Boolean))]
-      .sort((a, b) => a.localeCompare(b))
-      .map((t) => `<option value="${escapeAttr(t)}"></option>`)
-      .join("");
-    if (!$("monitor-start").value) $("monitor-start").value = data.start_date || "";
-    if (!$("monitor-end").value) $("monitor-end").value = data.end_date || "";
+    await FringeNet.loadJson(
+      "/data/latest.json",
+      (data) => {
+        state.shows = data.shows || [];
+        if (data.start_date && data.end_date) {
+          state.scanWindow = { start: data.start_date, end: data.end_date };
+        }
+        const list = $("monitor-show-list");
+        list.innerHTML = [...new Set(state.shows.map((s) => s.show_title).filter(Boolean))]
+          .sort((a, b) => a.localeCompare(b))
+          .map((t) => `<option value="${escapeAttr(t)}"></option>`)
+          .join("");
+        if (!$("monitor-start").value) $("monitor-start").value = data.start_date || "";
+        if (!$("monitor-end").value) $("monitor-end").value = data.end_date || "";
+        // Re-render availability chips that fall back to scan data — but only
+        // once the monitors themselves have arrived.
+        if (state.monitorsLoaded) render();
+      },
+      { retries: 2, timeoutMs: 90000 },
+    );
   }
 
   async function loadMonitors() {
     const data = await api("/monitors");
     state.monitors = data.items || [];
+    state.monitorsLoaded = true;
     render();
   }
 

@@ -89,6 +89,10 @@ def evaluate_monitor(
     openings: list[PerformanceRow] = []
 
     for row in rows:
+        if row.unchecked:
+            # Fallback label from a failed/skipped price lookup — alerting on
+            # it would email a fabricated reopen. Leave alert memory as-is.
+            continue
         perf_key = str(row.performance_id)
         buyable = row.availability in BUYABLE
         statuses.append(
@@ -176,6 +180,7 @@ async def rows_from_box_office_ids(
         except Exception as exc:  # noqa: BLE001
             print(f"  warn: price lookup failed for {box_id}: {exc}", flush=True)
             row.availability = "available"
+            row.unchecked = True
         rows.append(row)
     return sorted(rows, key=lambda r: (r.date_local, r.time_local))
 

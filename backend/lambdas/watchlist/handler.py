@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import random
+import time
 from datetime import date
 from typing import Any
 
@@ -27,7 +29,7 @@ from fringe_lib.scan import (
 )
 
 
-async def run_watchlist_check() -> dict[str, Any]:
+async def run_watchlist_check(*, deadline: float | None = None) -> dict[str, Any]:
     config = get_config()
     start = date.fromisoformat(config["start_date"])
     end = date.fromisoformat(config["end_date"])
@@ -64,14 +66,36 @@ async def run_watchlist_check() -> dict[str, Any]:
         # price-enrich just the slugs we care about.
         events = await fetch_all_programme(api, page_size=500)
         rows = collect_window_rows(events, start, end, slugs=slug_set)
-        rows = [r for r in rows if r.performance_id in watched_ids]
-        print(f"Re-checking {len(rows)} watched performances…", flush=True)
+        # Only re-check items that can still *reopen* (sold_out / nearly).
+        # Items already recorded as available have alerted; the daily scan
+        # refreshes them. Re-checking all 15k watched items every 15 min
+        # saturated the shared proxy with ~1.4M requests/day and got every
+        # price lookup 429'd, which starved the full scan too.
+        recheck_ids = {
+            pid
+            for pid, avail in previous_by_id.items()
+            if avail in {"sold_out", "nearly_sold_out"}
+        }
+        rows = [r for r in rows if r.performance_id in recheck_ids]
+        # Shuffle so a deadline-truncated run checks a different slice each
+        # time — coverage rotates instead of always dying on the same tail.
+        random.shuffle(rows)
+        print(
+            f"Re-checking {len(rows)} watched performances "
+            f"(of {len(watched_ids)} watched)…",
+            flush=True,
+        )
         classified = await enrich_with_prices(
             api,
             rows,
-            concurrency=20,
+            concurrency=10,
             nearly_threshold=nearly,
+            deadline=deadline,
         )
+        # Fallback-labeled rows (lookup failed / deadline hit) are not real
+        # classifications — updating or alerting on them would fabricate
+        # sold_out→available reopens.
+        classified = [r for r in classified if not r.unchecked]
         if monitors:
             monitor_result = await run_monitor_checks(
                 api, events, config, monitors
@@ -166,6 +190,12 @@ def handler(event: dict[str, Any] | None, context: Any) -> dict[str, Any]:
         print("Another watchlist run holds the lock; skipping this invocation.", flush=True)
         return {"ok": True, "skipped": "locked"}
     try:
-        return asyncio.run(run_watchlist_check())
+        # Stop price lookups ~150s before the Lambda timeout: monitors and
+        # DynamoDB writes still need to run, and finishing (instead of being
+        # hard-killed) is what releases the lock below.
+        deadline = None
+        if context is not None and hasattr(context, "get_remaining_time_in_millis"):
+            deadline = time.time() + context.get_remaining_time_in_millis() / 1000 - 150
+        return asyncio.run(run_watchlist_check(deadline=deadline))
     finally:
         release_watchlist_lock()

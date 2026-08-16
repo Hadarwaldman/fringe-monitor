@@ -18,6 +18,7 @@ from fringe_lib.aws_util import (
     get_config,
     list_monitors,
     release_watchlist_lock,
+    stamp_monitor_check_skipped,
 )
 from fringe_lib.proxy import load_proxy_into_env
 from fringe_lib.client import FringeClient, make_async_client
@@ -45,8 +46,15 @@ async def run_monitor_only_check() -> dict[str, Any]:
 
 
 def handler(event: dict[str, Any] | None, context: Any) -> dict[str, Any]:
-    if not acquire_watchlist_lock():
+    # TTL just above this Lambda's 300s timeout: if a run is hard-killed, the
+    # leaked lock clears in ~5.5 min instead of the watchlist job's 14.
+    if not acquire_watchlist_lock(ttl_seconds=330):
         print("Watchlist/monitor run already in progress; skipping.", flush=True)
+        try:
+            stamped = stamp_monitor_check_skipped()
+            print(f"Recorded skipped check on {stamped} monitor(s)", flush=True)
+        except Exception as exc:  # noqa: BLE001 — visibility only, never fatal
+            print(f"warn: could not stamp skipped check: {exc}", flush=True)
         return {"ok": True, "skipped": "locked"}
     try:
         return asyncio.run(run_monitor_only_check())
