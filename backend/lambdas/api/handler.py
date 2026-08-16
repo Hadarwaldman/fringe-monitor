@@ -33,6 +33,11 @@ from fringe_lib.planmyfringe import (
 )
 
 
+# Ceiling on performances one POST /availability call may price. The itinerary
+# sends one id per calendar entry; this bounds a hostile or buggy caller.
+MAX_LIVE_IDS = 60
+
+
 def _response(status: int, body: Any, *, cors: bool = True) -> dict[str, Any]:
     headers = {"Content-Type": "application/json"}
     if cors:
@@ -123,6 +128,50 @@ def _live_show_availability(slug: str) -> dict[str, Any]:
     }
 
 
+def _live_ids_availability(box_office_ids: list[str]) -> dict[str, Any]:
+    """Live availability for a specific list of performances.
+
+    The My Fringe itinerary cares about one date per show, not the show's whole
+    run, so it sends box-office ids straight from the last scan instead of a
+    slug. Same mechanism as `_live_show_availability` (direct price lookups, no
+    programme fetch) — just a caller-chosen set of performances.
+
+    Capped at MAX_LIVE_IDS: a page load must never turn into a large number of
+    proxy requests. ~0.46 KB per lookup, so a full cap costs ~28 KB.
+    """
+    import asyncio
+
+    from fringe_lib.availability import classify_box_office_ids
+    from fringe_lib.client import FringeClient, make_async_client
+
+    ids = [str(b) for b in box_office_ids if b][:MAX_LIVE_IDS]
+    if not ids:
+        return {"checked_at": _now_iso_api(), "performances": {}}
+
+    config = get_config()
+    nearly = int(config.get("nearly_threshold") or 20)
+
+    async def go() -> dict[str, dict[str, Any]]:
+        load_proxy_into_env()
+        async with make_async_client() as client:
+            api = FringeClient(client)
+            await api.authenticate()
+            return await classify_box_office_ids(api, ids, nearly_threshold=nearly)
+
+    avail = asyncio.run(go())
+    return {
+        "checked_at": _now_iso_api(),
+        "requested": len(ids),
+        "performances": {
+            box_id: {
+                "availability": res["availability"],
+                "percent_remaining": res["percent_remaining"],
+            }
+            for box_id, res in avail.items()
+        },
+    }
+
+
 def _now_iso_api() -> str:
     from datetime import datetime, timezone
 
@@ -178,6 +227,13 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         if avail_match and method == "GET":
             slug = _unquote(avail_match.group(1))
             return _response(200, _live_show_availability(slug))
+
+        if not avail_match and path.endswith("/availability") and method == "POST":
+            body = _parse_body(event)
+            ids = body.get("box_office_ids")
+            if not isinstance(ids, list):
+                return _response(400, {"error": "box_office_ids must be a list"})
+            return _response(200, _live_ids_availability(ids))
 
         if path.endswith("/monitors") and method == "GET":
             return _response(200, {"items": list_monitors()})

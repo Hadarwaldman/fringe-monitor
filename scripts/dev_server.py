@@ -191,10 +191,52 @@ def make_handler(args, data_files: dict[str, dict] | None, data_dir: Path | None
                 return True
             return False
 
+        def _read_body(self) -> dict:
+            length = int(self.headers.get("Content-Length") or 0)
+            if not length:
+                return {}
+            try:
+                return json.loads(self.rfile.read(length).decode("utf-8"))
+            except (ValueError, UnicodeDecodeError):
+                return {}
+
         def do_POST(self):
             if self._maybe_degrade(False):
                 return
-            if self.path.startswith("/api/"):
+            path = self.path.split("?", 1)[0]
+
+            # Live re-price used by the My Fringe itinerary. Fakes a fresher
+            # reading than the demo scan (deterministic per id) so the "on
+            # sale" → "N% left" upgrade is visible offline.
+            if path == "/api/availability" and self.command == "POST":
+                ids = self._read_body().get("box_office_ids")
+                if not isinstance(ids, list):
+                    self._send_json(400, {"error": "box_office_ids must be a list"})
+                    return
+                perfs = {}
+                for box_id in [str(b) for b in ids if b][:60]:
+                    pct = sum(ord(c) for c in box_id) % 100
+                    perfs[box_id] = {
+                        "availability": (
+                            "sold_out"
+                            if pct == 0
+                            else "nearly_sold_out"
+                            if pct <= 20
+                            else "available"
+                        ),
+                        "percent_remaining": pct,
+                    }
+                self._send_json(
+                    200,
+                    {
+                        "checked_at": "2026-08-16T09:30:00Z",
+                        "requested": len(perfs),
+                        "performances": perfs,
+                    },
+                )
+                return
+
+            if path.startswith("/api/"):
                 self._send_json(501, {"error": "dev server: write endpoints are stubs"})
                 return
             self._send(404, b"not found", "text/plain")

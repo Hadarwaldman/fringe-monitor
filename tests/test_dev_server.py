@@ -11,6 +11,7 @@ import gzip
 import importlib.util
 import json
 import threading
+import urllib.error
 import urllib.request
 from http.server import ThreadingHTTPServer
 from pathlib import Path
@@ -90,6 +91,46 @@ def test_api_stubs(server_url):
     assert json.loads(body)["start_date"] == "2026-08-12"
     _, _, body = get(server_url + "/api/monitors")
     assert json.loads(body)["items"]
+
+
+def post(url: str, payload):
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req) as res:
+        return res.status, json.loads(res.read())
+
+
+def test_live_availability_stub(server_url):
+    """POST /availability — the itinerary's live re-price, one id per entry."""
+    _, latest = None, json.loads(get(server_url + "/data/latest.json")[2])
+    box_ids = [
+        p["box_office_id"]
+        for show in latest["shows"]
+        for p in show["performances"]
+        if p.get("box_office_id")
+    ][:3]
+    assert box_ids, "demo scan should carry box-office ids"
+
+    status, data = post(server_url + "/api/availability", {"box_office_ids": box_ids})
+    assert status == 200
+    assert data["checked_at"]
+    for box_id in box_ids:
+        fresh = data["performances"][box_id]
+        assert fresh["availability"] in {"sold_out", "nearly_sold_out", "available"}
+        assert isinstance(fresh["percent_remaining"], int)
+
+
+def test_live_availability_stub_rejects_bad_body(server_url):
+    try:
+        post(server_url + "/api/availability", {"box_office_ids": "nope"})
+    except urllib.error.HTTPError as exc:
+        assert exc.code == 400
+    else:
+        raise AssertionError("expected HTTP 400")
 
 
 def test_optional_data_files_present(server_url):

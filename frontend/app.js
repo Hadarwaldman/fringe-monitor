@@ -1486,6 +1486,93 @@
     section.hidden = false;
   }
 
+  // ------------------------------------------- live availability (My Fringe)
+
+  // The scan's percentages are up to a day old, and a performance the daily
+  // scan failed to price lands in latest.json as "available" with no number
+  // (it renders as a bare "on sale"). The itinerary is small — one date per
+  // show — so on load we re-price exactly those performances through the same
+  // endpoint the show page uses. Bounded so a page load can't become a big
+  // proxy bill: upcoming entries only, soonest first, hard cap.
+  const MAX_LIVE_ITIN_PERFS = 60;
+  let itinLiveDone = false;
+
+  /** Performances to re-price: every performance on each upcoming entry's date.
+   *
+   * Usually exactly one per entry. When a show has two performances that day
+   * we take both rather than guessing by time — `remainingForDay` averages
+   * across the day, so refreshing only one would blend fresh and stale numbers.
+   */
+  function itineraryLivePerfs() {
+    const today = todayStr();
+    const seen = new Set();
+    const picked = [];
+    const entries = itineraryEntries()
+      .filter((e) => e.date && e.show && !e.past && e.date >= today)
+      .sort((a, b) => String(a.date).localeCompare(String(b.date)));
+
+    for (const entry of entries) {
+      for (const perf of entry.show.performances || []) {
+        if (perf.date !== entry.date || !perf.box_office_id) continue;
+        if (seen.has(perf.box_office_id)) continue;
+        seen.add(perf.box_office_id);
+        picked.push({ perf, show: entry.show });
+      }
+      if (picked.length >= MAX_LIVE_ITIN_PERFS) break;
+    }
+    return picked.slice(0, MAX_LIVE_ITIN_PERFS);
+  }
+
+  function setItinLiveNote(message) {
+    const el = $("itin-live");
+    if (el) el.textContent = message || "";
+  }
+
+  async function refreshItineraryAvailability() {
+    if (itinLiveDone || page !== "my" || !apiBase) return;
+    const targets = itineraryLivePerfs();
+    if (!targets.length) return;
+    itinLiveDone = true;
+
+    setItinLiveNote("Checking live availability…");
+    try {
+      const res = await FringeNet.fetchWithTimeout(`${apiBase}/availability`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          box_office_ids: targets.map((t) => t.perf.box_office_id),
+        }),
+        cache: "no-store",
+        timeoutMs: 20000,
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      const fresh = data.performances || {};
+
+      const touched = new Set();
+      for (const { perf, show } of targets) {
+        const update = fresh[perf.box_office_id];
+        if (!update) continue;
+        perf.availability = update.availability;
+        perf.percent_remaining = update.percent_remaining;
+        touched.add(show);
+      }
+      if (!touched.size) {
+        setItinLiveNote("Showing last scan (live check unavailable)");
+        return;
+      }
+      for (const show of touched) recomputeShowDates(show);
+      renderItinerary();
+      const at = data.checked_at ? new Date(data.checked_at) : new Date();
+      setItinLiveNote(
+        `Live as of ${at.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`,
+      );
+    } catch (_) {
+      // Weak signal / API down: the scan numbers already on screen stand.
+      setItinLiveNote("Showing last scan (live check unavailable)");
+    }
+  }
+
   // ------------------------------------------------------------- render: Shows
 
   function filteredShows() {
@@ -2133,5 +2220,13 @@
       renderAll();
     }
     return loadPlanner();
-  });
+  })
+    .catch(() => {
+      /* offline / no planner — whatever loaded is already on screen */
+    })
+    .then(() => {
+      // Itinerary entries are few and date-specific, so re-price them live
+      // rather than trusting numbers that are up to a day old.
+      if (page === "my") refreshItineraryAvailability();
+    });
 })();
