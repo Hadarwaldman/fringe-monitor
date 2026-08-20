@@ -1,7 +1,12 @@
+# All scheduled jobs are DISABLED since the end of Fringe 2026 (2026-08-20):
+# no scans run, so no proxy bandwidth is consumed. To bring the monitor back
+# for a future festival, remove the state = "DISABLED" lines below (watchlist
+# stays disabled permanently — see its own comment).
 resource "aws_cloudwatch_event_rule" "daily_full_scan" {
   name                = "${local.name}-daily-full-scan"
   description         = "Daily Fringe full programme scan"
   schedule_expression = var.daily_schedule
+  state               = "DISABLED"
 }
 
 resource "aws_cloudwatch_event_target" "daily_full_scan" {
@@ -48,6 +53,7 @@ resource "aws_cloudwatch_event_rule" "wishlist_refresh" {
   name                = "${local.name}-wishlist-refresh"
   description         = "Refresh availability for the PlanMyFringe wishlist shows only (cheap)"
   schedule_expression = var.wishlist_refresh_schedule
+  state               = "DISABLED"
 }
 
 resource "aws_cloudwatch_event_target" "wishlist_refresh" {
@@ -68,6 +74,7 @@ resource "aws_cloudwatch_event_rule" "monitor_check" {
   name                = "${local.name}-monitor-check"
   description         = "Lightweight show-monitor check (cheap, frequent)"
   schedule_expression = var.monitor_schedule
+  state               = "DISABLED"
 }
 
 resource "aws_cloudwatch_event_target" "monitor_check" {
